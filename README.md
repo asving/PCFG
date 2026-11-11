@@ -233,7 +233,41 @@ Reading it by step:
 
 Each extra read costs a layer, so this is a ladder of loss floors that a sweep over depth could land on. At coupling 0.5 the ladder is too short to see (8.4, 0.9, 0.1). If the type is never revealed, every truncation costs under 10 mnat at 0.9 and under 3 at 0.5, and limiting the reads up costs under 1: not worth training.
 
-**Suggested order.** `tomq` (a different geometry and the longest gather), `clock3` (the thread clock), `mess3+open` (the control without type inference), then coupled brackets at 0.9 with revealed types over 3 to 6 layers. **One-layer readability is not established for either new family.** Published one-layer results cover only Mess3 (Piotrowski et al., arXiv 2502.01954: single-layer transformers, belief geometry in the final residual stream; real eigenvalues only, with a negative eigenvalue handled by two heads). `clock3` is a process made up here and its state map has complex eigenvalues (modulus 0.85, a third of a turn per step), a case that paper mentions but does not test. For Tom Quantum no published one-layer result was found: Riechers, Elliott and Shai (arXiv 2507.07432) report linear belief geometry for quantum processes in 4-layer networks, read mainly from all layers together. A one-layer network on each flat process would settle it in minutes. An anti-persistent Mess3 (x = 0.5, inside the tested regime) is not a substitute for the clock: counting recency in positions costs 11 to 18 mnat after a long child there, about what `mess3` gives, against 31 for `clock3`.
+**Suggested order.** `tomq` (a different geometry and the longest gather), `clock3` (the thread clock), `mess3+open` (the control without type inference), then coupled brackets at 0.9 with revealed types over 3 to 6 layers. Whether each component's belief can be read from one block is checked in the next section.
+
+## Is each component's belief readable from one block?
+
+The probes above read a belief from one block's output. That only makes sense for components whose belief is linearly readable from a single block of a trained network, which is known to fail for RRXOR (Shai et al., arXiv 2405.15943). `flat.py` trains a network on one component alone, on flat sequences with no brackets, and reads the belief from each block. d = 64, 4 heads, context 32, one seed each.
+
+Four layers, 15,000 steps:
+
+| component | excess loss, mnat/token | readout R², last block | all blocks together | untrained, last block |
+|---|---|---|---|---|
+| Mess3 (0.05, 0.85) | 0.05 | 0.998 | 0.999 | 0.876 |
+| clock (Mess3 advancing by one) | 0.10 | 0.995 | 0.998 | 0.669 |
+| fern (2000, 0.49) | 0.01 | 0.990 | 0.998 | 0.601 |
+| Tom Quantum, β/α = 0.364 | 0.35 | 0.982 | 0.995 | 0.668 |
+| Tom Quantum, β/α = 2.747 | 1.44 | 0.964 | 0.982 | 0.440 |
+| Tom Quantum, β/α = √51 | 4.20, still falling | 0.622 | 0.628 | 0.128 |
+| RRXOR | 0.01 | 0.669 | 0.799 | 0.091 |
+
+- RRXOR is the control: the network solves it, yet the belief is not readable from one block.
+- Mess3, the clock, fern and Tom Quantum at the settings used in the `tomq` family pass. Tom Quantum at β/α = √51 (reported as the Bloch Walk setting of arXiv 2507.07432) does not at this budget; its belief has a slowly decaying component that changes sign every step.
+
+A stricter question, whether a one-layer network can hold the belief at all (20,000 steps):
+
+| component | excess loss, mnat/token | readout R² after the layer |
+|---|---|---|
+| Mess3 (0.05, 0.85) | 0.15 | 0.996 |
+| clock | 0.21 | 0.995 |
+| Tom Quantum, β/α = 0.839 | 0.19 | 0.986 (the last token alone gives 0.971) |
+| fern (2000, 0.49) | 0.73 | 0.921 |
+| Tom Quantum, β/α = 0.364 | 2.47 | 0.902 |
+| Tom Quantum, β/α = 2.747 | 11.5 | 0.859 |
+| Tom Quantum, β/α = √51 | 8.4, on a plateau | 0.240 |
+| RRXOR | 54 | 0.241 |
+
+For Tom Quantum at β/α = 2.747 one layer is a real limit: three times the training gives 7.2 mnat and 0.82, while two layers give 4.0 mnat and 0.93. So a bracket network on `tomq` needs layers for the component's own filtering on top of the bracket bookkeeping; six is a safer choice than the pilot's four.
 
 ## Not yet done
 

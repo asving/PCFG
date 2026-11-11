@@ -1,0 +1,129 @@
+=== 1. LOSS  (runs/night_d16_L4_T128_s1, 768 x 128 held-out positions)
+Prediction: the network's row is near zero in every column. A shortcut would show in its own column.
+
+excess loss over Bayes, mnat/token                      all       no child yet   new, has sibling    new, depth >= 1         at a close  after short child   after long child
+share of positions                                    1.000              0.512              0.146              0.231              0.079              0.069              0.052
+the algorithm (exact)                                   0.0                0.0                0.0                0.0                0.0                0.0                0.0
+state from last 4 own tokens                            0.2                0.1                0.0                0.0                0.1                0.2                0.3
+state from last 2 own tokens                            3.6                2.2                0.0                0.0                3.3                4.2                4.4
+state from last own token                              13.5                9.4                1.3                1.3               13.1               15.8               16.2
+recency counted in positions                            2.1                0.0                0.0                0.0                2.0                5.7               14.4
+depth tag only, no bracket tag                         46.2               66.5              140.6               89.0               41.5               35.9               28.8
+no reset at an open                                   258.1              359.8              499.0              453.7              227.7              218.2              166.9
+no type inference                                      46.1               32.2                4.7                4.7               44.3               56.2               53.1
+keeps type, forgets state at a close                    7.7               -0.0               -0.0               -0.0               57.3               15.1               16.0
+forgets the parent at a close                          18.7               -0.0               -0.0               -0.0               71.7               51.3               50.5
+THE NETWORK                                            10.0                5.1                2.8                3.1               24.5               15.0               20.6
+the network by depth 0..6:   6.8  9.4  9.1  10.7  11.4  12.5  18.0
+
+=== 2. PROBES  (R^2 on held-out sequences; residual after embedding, then after each block)
+Prediction: each quantity becomes readable in the order of the algorithm's steps; the parent's belief never does.
+
+                                            expected    emb   blk1   blk2   blk3   blk4   best untrained
+1 depth                                        early   0.09   0.23   0.65   0.97   0.74      0.02
+2 tag: distance back to own '#'          after depth   0.14   0.15   0.17   0.51   0.46      0.07
+3 index: own tokens read                   after tag   0.11   0.15   0.26   0.49   0.45      0.06
+4 state belief per type (9)                   middle   0.78   0.78   0.79   0.85   0.77      0.63
+5 evidence of the token just read (3)         middle  -0.00   0.00   0.01   0.71   0.60     -0.00
+6 type log-posterior (3)                        late   0.00   0.01   0.02   0.23   0.59     -0.00
+7 belief of the own bracket (9)                 last   0.30   0.31   0.32   0.48   0.66      0.24
+  belief of the PARENT bracket                absent  -0.00   0.01   0.02   0.00   0.01      0.00
+
+=== 3. ATTENTION  (share of each head's attention by what the attended position is)
+Prediction: an even-spread head early (the count); later heads that read only the own bracket,
+also just after a close, when its tokens sit behind the closed child.
+
+all positions at depth >= 1  (63888 positions)
+                   self      own #   own toks own closes   children  ancestors     others        BOS  prev in thread
+even spread        0.02       0.02       0.08       0.01       0.07       0.50       0.28       0.02
+blk1 head 0        0.02       0.03       0.07       0.01       0.08       0.49       0.28       0.03            0.03
+blk1 head 1        0.02       0.02       0.07       0.00       0.07       0.46       0.25       0.11            0.05
+blk1 head 2        0.03       0.02       0.08       0.01       0.07       0.48       0.28       0.02            0.02
+blk1 head 3        0.02       0.02       0.07       0.01       0.07       0.48       0.28       0.04            0.03
+blk2 head 0        0.02       0.03       0.06       0.02       0.07       0.46       0.28       0.07            0.03
+blk2 head 1        0.03       0.04       0.08       0.01       0.09       0.43       0.27       0.05            0.03
+blk2 head 2        0.03       0.02       0.08       0.01       0.07       0.45       0.24       0.10            0.04
+blk2 head 3        0.02       0.04       0.06       0.01       0.08       0.41       0.26       0.12            0.04
+blk3 head 0        0.30       0.16       0.23       0.10       0.07       0.12       0.01       0.00            0.21
+blk3 head 1        0.02       0.03       0.05       0.01       0.07       0.48       0.31       0.03            0.02
+blk3 head 2        0.49       0.07       0.27       0.05       0.05       0.07       0.00       0.00            0.24
+blk3 head 3        0.05       0.05       0.10       0.02       0.11       0.41       0.26       0.01            0.04
+blk4 head 0        0.28       0.06       0.42       0.02       0.03       0.07       0.13       0.00            0.15
+blk4 head 1        0.20       0.17       0.23       0.06       0.03       0.16       0.14       0.00            0.14
+blk4 head 2        0.15       0.13       0.21       0.03       0.11       0.14       0.23       0.00            0.10
+blk4 head 3        0.14       0.02       0.22       0.03       0.03       0.36       0.15       0.05            0.08
+
+just read a close, >= 3 own tokens behind the child  (2817 positions)
+                   self      own #   own toks own closes   children  ancestors     others        BOS  prev in thread
+even spread        0.02       0.02       0.12       0.01       0.24       0.38       0.20       0.02
+blk1 head 0        0.02       0.02       0.12       0.01       0.26       0.36       0.20       0.03            0.02
+blk1 head 1        0.02       0.02       0.12       0.01       0.24       0.36       0.20       0.04            0.02
+blk1 head 2        0.02       0.01       0.12       0.01       0.24       0.38       0.20       0.03            0.02
+blk1 head 3        0.02       0.02       0.12       0.01       0.24       0.38       0.21       0.02            0.02
+blk2 head 0        0.05       0.02       0.09       0.03       0.25       0.33       0.20       0.04            0.01
+blk2 head 1        0.03       0.03       0.12       0.02       0.29       0.31       0.19       0.02            0.02
+blk2 head 2        0.02       0.01       0.12       0.01       0.25       0.33       0.17       0.09            0.02
+blk2 head 3        0.02       0.03       0.09       0.01       0.25       0.29       0.18       0.12            0.01
+blk3 head 0        0.44       0.01       0.08       0.02       0.44       0.01       0.00       0.00            0.03
+blk3 head 1        0.03       0.03       0.08       0.02       0.24       0.35       0.24       0.02            0.01
+blk3 head 2        0.52       0.00       0.05       0.00       0.42       0.00       0.00       0.00            0.02
+blk3 head 3        0.07       0.04       0.11       0.03       0.39       0.21       0.14       0.00            0.02
+blk4 head 0        0.08       0.01       0.66       0.02       0.11       0.07       0.07       0.00            0.12
+blk4 head 1        0.27       0.03       0.31       0.06       0.08       0.18       0.07       0.00            0.07
+blk4 head 2        0.09       0.04       0.29       0.03       0.34       0.10       0.11       0.00            0.05
+blk4 head 3        0.16       0.01       0.32       0.04       0.12       0.23       0.06       0.06            0.07
+
+How do the thread-reading heads count recency? Take a position i whose two most recent own tokens are
+i and i-1, and whose third is j3. Share = attention on j3 / (attention on i-1 + attention on j3).
+Counted in own tokens, a child between j3 and i-1 changes nothing: the share equals the reference.
+Counted in positions, a head whose attention decays with distance would drop the share towards 0.
+
+                 three own tokens in a row    child of span <= 5 between   child of span >= 12 between
+positions                            54313                          1819                          1407
+blk4 head 0                           0.50                          0.52                          0.48
+
+=== 4. PATCHING  (after a close, where is the parent's information read from?)
+Take a close at position q whose bracket has own tokens behind the child. Change the bracket's earlier
+own tokens (set R, all but the last one before the child, which sits at p). That changes what should be
+predicted at q. Then overwrite the residual after one block, at one set of positions, with its value in
+the changed run, and report the fraction of the full change in q's log-probabilities that this produces.
+Prediction: nothing travels through the child or through q until the last block. In the algorithm, p holds
+one thing that depends on R, its own evidence term (step 5), so p should carry a minority share once that
+step is done, and R the rest. The algorithm's own split is printed for comparison.
+
+712 events. The change moves the Bayes law at q by 160 mnat (KL); the network's change in log-probabilities has cosine 0.86 with the Bayes change.
+
+the algorithm, patched after its evidence step:   R 0.75   p 0.29   everything else 0   q 0
+
+the network, patched after              embedding    block 1    block 2    block 3
+R: the changed own tokens                    1.00       1.00       1.00       0.79
+p: last own token before the child           0.00       0.00       0.00       0.21
+everything else before q                     0.00      -0.00       0.00      -0.00
+q itself                                     0.00       0.00       0.00       0.01
+
+=== 5. TYPES  (one state-belief subspace per type, the same at every depth)
+The algorithm keeps a state belief for every type at once (step 4). Prediction: each type's belief has its
+own subspace; that subspace is the same at every depth; and it is filled whether or not the type is likely.
+Subspaces come from one joint regression of the residual on all types' state beliefs and the type posterior.
+Overlap = mean squared cosine of principal angles (1 = same subspace).
+
+how much of one type's state belief the other types' beliefs predict linearly (R^2): 0.97, 0.97, 0.64   (near 1 would make the subspaces unidentifiable)
+after block 3:  between types 0-1 0.73, 0-2 0.12, 1-2 0.05   (untrained 0.95, 0.93, 0.97; chance 0.12)
+                same type, depth <= 1 vs depth >= 2: 0.65, 0.96, 0.98
+after block 4:  between types 0-1 0.91, 0-2 0.25, 1-2 0.35   (untrained 0.95, 0.94, 0.97; chance 0.12)
+                same type, depth <= 1 vs depth >= 2: 0.90, 0.97, 0.95
+
+state belief of type k read where:        emb   blk1   blk2   blk3   blk4
+type k is likely (posterior > 0.5)       0.80   0.81   0.81   0.87   0.82
+type k is unlikely (posterior < 0.1)     0.75   0.76   0.77   0.85   0.73
+
+=== 6. INVARIANCE  (does anything outside the own bracket leak into the prediction?)
+Exact prediction is unchanged by the tokens of enclosing brackets and by the content of brackets that
+have closed. Change those tokens and measure how far the prediction moves (KL, mnat), where it should
+not move and, for scale, where it should.
+
+                                                         should not move                   should move
+                                               exact   network  positions       exact   network  positions
+enclosing: root tokens changed                   0.0       0.6      63888       140.8     137.1      33573
+enclosing: depth <= 1 tokens changed             0.0       0.5      41452       143.5     135.8      52393
+a closed bracket's content changed               0.0       0.5      63526       138.3     124.1      12271

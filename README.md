@@ -95,12 +95,14 @@ A network could do something cheaper. `algorithm.py` implements the shortcuts be
 
 ## The experiment
 
-Train a small causal transformer on the process (`train.py`), then run `validate.py`. It makes four measurements, each with a prediction from the algorithm.
+Train a small causal transformer on the process (`train.py`), then run `validate.py`. It makes six measurements, each with a prediction from the algorithm.
 
 1. **Loss.** Excess loss over Bayes in the position classes above. Prediction: near zero in every column, flat in depth.
 2. **Probes.** Linear readout of each step's quantity from the residual after each block, with an untrained network as control. Prediction: the quantities become readable in the order of the steps, and the parent's belief is never readable at a child's positions.
 3. **Attention.** For each head, the share of attention by what the attended position is to the current one: own thread, own `#`, inside closed children, enclosing brackets, earlier brackets. Prediction: even-spread heads early (the count), then heads that read only the own thread, including just after a close, when the thread sits behind the child. A second test asks whether recency is counted in thread tokens or in positions.
 4. **Patching.** After a close at `q`, change the parent's earlier tokens `R` (all but the last one before the child, at `p`). Overwrite the residual after one block at one set of positions with its value in the changed run, and measure what fraction of the change in `q`'s prediction results. Prediction: nothing travels through the child, or reaches `q` before the last block; `p` carries only its own evidence term, a minority share that the algorithm itself predicts.
+5. **Types.** Step 4 keeps a state belief for every type at once. Prediction: each type's state belief has its own subspace, the same at every depth, and it is filled whether or not that type is likely. Measured by one joint regression of the residual on all types' beliefs.
+6. **Invariance.** Exact prediction does not depend on the tokens of enclosing brackets, or on the content of brackets that have closed. Change those tokens and measure how far the network's prediction moves. Prediction: not at all. This is the direct test that the belief is refreshed at every open and that nothing leaks back at a close.
 
 ## Pilot
 
@@ -145,6 +147,18 @@ Recency test on the three block-4 readers (share of attention on the third most 
 
 The same patch applied to the algorithm after its evidence step gives `R` 0.75 and `p` 0.29. So block 4 reads the parent's information from the parent's own token positions, nothing passes through the child, and the share at `p` is about what its evidence term accounts for.
 
+**5. Types.** After block 3 the three types' state-belief subspaces are nearly separate: overlaps 0.13, 0.12, 0.16 (chance 0.02; an untrained network gives 0.93–0.98, because there everything sits in the last token's embedding). After block 4 they have partly merged: 0.92, 0.49, 0.62. The same type's subspace at depth ≤ 1 and depth ≥ 2 overlaps 0.58, 0.92, 0.98 after block 3 and 0.93, 0.99, 0.99 after block 4. A type's state belief is read as well where that type is unlikely (posterior below 0.1: R² 0.94) as where it is likely (0.95). Caveat: in `mess3` two of the three types' beliefs are almost linear functions of the others (R² 0.97), so these subspaces are poorly identified; `clock3` (0.38) and `tomq` (0.49–0.77) are better for this test.
+
+**6. Invariance** (KL in mnat between the network's predictions before and after the change):
+
+| change | where it should not matter | where it should (exact / network) |
+|---|---|---|
+| root bracket's tokens | 0.1 at depth ≥ 1 | 140.8 / 140.6 at depth 0 |
+| tokens at depth ≤ 1 | 0.1 at depth ≥ 2 | 143.5 / 143.1 at depth ≤ 1 |
+| content of a closed bracket | 0.1 after its close | 138.3 / 134.8 inside it |
+
+**Training order.** In the old-format log, the extra loss in resumed brackets over fresh ones was 27 mnat at step 1,000 (forgetting the parent costs 40), 15 at step 1,500 and 3 at the end. So filtering within a bracket was learned before resuming after a close.
+
 **Not explained.**
 - Block 2 head 2 puts 0.38 of its attention on the previous position in the thread overall, but just after a close it reads inside the closed child (0.70) and not the thread's previous position (0.02).
 - Block 4 head 0 puts 0.21–0.27 on brackets that closed before the current one opened.
@@ -173,6 +187,8 @@ Reading it by step:
 - **Steps 5–6, type inference.** Worth 47 to 78 in the Mess3 families, 29 in `tomq`, and absent in `+open`, which makes `+open` the control: the evidence and type probes should find nothing there.
 - **The close.** Forgetting the parent costs most when the type is known (162 to 214 in `+open` and single-type processes).
 
+- **Per-type subspaces.** How much of one type's state belief the other types' beliefs predict linearly: 0.97, 0.97, 0.64 in `mess3`; 0.38 for every type in `clock3`; 0.65, 0.77, 0.49 in `tomq`. The lower, the better the per-type subspaces can be told apart.
+
 `mess3_slow` (not shown) is uninformative: all inference is worth 18 mnat and the types are barely distinguishable.
 
 **Coupled brackets** are the first step outside the class. `coupled.py` makes a child's type depend on its parent's, checks that the active bracket's belief is still an exact local statistic (brute-force enumeration, 1.3e-14), and prices observers that chain only a limited number of reads. With the close token revealing the type and the child sharing its parent's type with probability 0.9:
@@ -196,6 +212,7 @@ Each extra read costs a layer, so this is a ladder of loss floors that a sweep o
 - Width below 72, the size that would hold a full depth-8 stack of beliefs. The pilot's d = 128 does not test whether the per-token dimension is bounded.
 - Fewer and more layers. The algorithm suggests about four attention steps.
 - A hand-built transformer that implements the seven steps.
+- Causal tests of the tag: overwrite one bracket's tag with another's and check that the readers switch threads. Head ablations by step. Whether the type readout equals the sum of the per-token evidence readouts.
 - Depths beyond those seen in training.
 - Coupled brackets in `train.py` and `validate.py`; `coupled.py` is a standalone study.
 
@@ -207,7 +224,7 @@ Each extra read costs a layer, so this is a ladder of loss floors that a sweep o
 | `algorithm.py` | the seven steps with attention-style operations; the shortcuts; position classes; run it for the self-check, the worked example and the shortcut table |
 | `model.py` | the transformer, and a hand-run forward pass that returns residuals and attention and takes patches |
 | `train.py` | training (`--process NAME`), with excess loss by position class at each eval |
-| `validate.py` | the four measurements |
+| `validate.py` | the six measurements |
 | `design.py` | shortcut prices across families |
 | `coupled.py` | coupled brackets: exactness check and the cost of limited reads |
 | `runs/` | training logs; checkpoints are not committed |

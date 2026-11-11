@@ -238,3 +238,78 @@ for name, mask in masks.items():
         logits, _, _ = trace(model, xc_t, patch={l: (torch.from_numpy(mask), corr_resid[l])}, want_attn=False)
         row.append(((at_q(logits) - y0) * full).sum() / (full ** 2).sum())
     print(f"{name:38s}" + "".join(f"{v:11.2f}" for v in row))
+
+# --- 5. types -------------------------------------------------------------------------------------
+print(f"\n=== 5. TYPES  (one state-belief subspace per type, the same at every depth)")
+print("The algorithm keeps a state belief for every type at once (step 4). Prediction: each type's belief has its\n"
+      "own subspace; that subspace is the same at every depth; and it is filled whether or not the type is likely.\n"
+      "Subspaces come from one joint regression of the residual on all types' state beliefs and the type posterior.\n"
+      "Overlap = mean squared cosine of principal angles (1 = same subspace).\n")
+K, S = proc.K, proc.S
+eta = ref["state"]
+busy = index >= 2
+
+
+def type_planes(X, mask):
+    Z = np.concatenate([eta[mask].reshape(-1, K * S), ref["w"][mask]], 1)
+    B = np.linalg.lstsq(Z - Z.mean(0), X[mask] - X[mask].mean(0), rcond=None)[0]
+    return [np.linalg.svd(B[k * S:(k + 1) * S] - B[k * S:(k + 1) * S].mean(0), full_matrices=False)[2][:S - 1]
+            for k in range(K)]
+
+
+overlap = lambda P, Q: float(np.linalg.norm(P @ Q.T) ** 2 / len(P))
+if K > 1:
+    flat = eta[busy].reshape(-1, K, S)
+    ident = []
+    for k in range(K):
+        others = np.concatenate([flat[:, j] for j in range(K) if j != k], 1)
+        others = others - others.mean(0)
+        y = flat[:, k] - flat[:, k].mean(0)
+        ident.append(1 - ((y - others @ np.linalg.lstsq(others, y, rcond=None)[0]) ** 2).sum() / (y ** 2).sum())
+    print(f"how much of one type's state belief the other types' beliefs predict linearly (R^2): "
+          + ", ".join(f"{v:.2f}" for v in ident) + "   (near 1 would make the subspaces unidentifiable)")
+    for l in (L - 1, L):
+        P = type_planes(resid[l], busy)
+        Ps, Pd = type_planes(resid[l], busy & (depth <= 1)), type_planes(resid[l], busy & (depth >= 2))
+        P0 = type_planes(blank_resid[l], busy)
+        pairs = [(j, k) for j in range(K) for k in range(j + 1, K)]
+        print(f"after block {l}:  between types " + ", ".join(f"{j}-{k} {overlap(P[j], P[k]):.2f}" for j, k in pairs)
+              + f"   (untrained " + ", ".join(f"{overlap(P0[j], P0[k]):.2f}" for j, k in pairs)
+              + f"; chance {(S - 1) / args['d']:.2f})")
+        print(f"                same type, depth <= 1 vs depth >= 2: " + ", ".join(f"{overlap(Ps[k], Pd[k]):.2f}" for k in range(K)))
+    w = ref["w"]
+    print(f"\n{'state belief of type k read where:':38s}" + "".join(f"{('emb' if l == 0 else f'blk{l}'):>7s}" for l in range(L + 1)))
+    for label, cond in (("type k is likely (posterior > 0.5)", lambda k: w[..., k] > 0.5),
+                        ("type k is unlikely (posterior < 0.1)", lambda k: w[..., k] < 0.1)):
+        vals = [np.mean([r2(resid[l], eta[:, :, k], busy & cond(k)) for k in range(K)]) for l in range(L + 1)]
+        print(f"{label:38s}" + "".join(f"{v:7.2f}" for v in vals))
+
+# --- 6. invariance --------------------------------------------------------------------------------
+print(f"\n=== 6. INVARIANCE  (does anything outside the own bracket leak into the prediction?)")
+print("Exact prediction is unchanged by the tokens of enclosing brackets and by the content of brackets that\n"
+      "have closed. Change those tokens and measure how far the prediction moves (KL, mnat), where it should\n"
+      "not move and, for scale, where it should.\n")
+rng = np.random.default_rng(11)
+first = np.zeros((N, T), dtype=bool)                      # interior of the first depth-1 bracket that closes
+after_it = np.zeros((N, T), dtype=bool)
+for b in range(N):
+    opens = np.flatnonzero(proc.is_open(xin[b]) & (depth[b] == 1))
+    for o in opens:
+        later = np.flatnonzero(is_close[b] & (depth[b] == 0) & (J > o))
+        if len(later) and later[0] <= T - 10 and ordinary[b, o + 1:later[0]].sum() >= 2:
+            first[b, o + 1:later[0]] = True
+            after_it[b, later[0]:] = True
+            break
+tests = [("enclosing: root tokens changed", ordinary & (depth == 0), depth >= 1, (depth == 0) & (index >= 1)),
+         ("enclosing: depth <= 1 tokens changed", ordinary & (depth <= 1), depth >= 2, (depth <= 1) & (index >= 1)),
+         ("a closed bracket's content changed", ordinary & first, after_it, first & (np.cumsum(ordinary & first, 1) >= 1))]
+print(f"{'':40s}{'should not move':>32s}{'should move':>30s}")
+print(f"{'':40s}{'exact':>12s}{'network':>10s}{'positions':>11s}{'exact':>12s}{'network':>10s}{'positions':>11s}")
+for name, change, still, moved in tests:
+    x2 = np.where(change, (xin + rng.integers(1, proc.C, xin.shape)) % proc.C, xin)
+    lp2 = np.concatenate([torch.log_softmax(trace(model, torch.from_numpy(x2[a:a + 128]), want_attn=False)[0], -1)
+                          .double().numpy() for a in range(0, N, 128)])
+    net = (np.exp(logp) * (logp - lp2)).sum(-1)
+    exact = algorithm.excess(ref["pred"], algorithm.run(proc, np.concatenate([x2[:, 1:], toks[:, -1:]], 1))["pred"])
+    print(f"{name:40s}{1e3 * exact[still].mean():12.1f}{1e3 * net[still].mean():10.1f}{int(still.sum()):11d}"
+          f"{1e3 * exact[moved].mean():12.1f}{1e3 * net[moved].mean():10.1f}{int(moved.sum()):11d}")

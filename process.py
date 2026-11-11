@@ -1,6 +1,9 @@
-"""Bracketed-Mess3 process, with a batched sampler and exact Bayes filter.
+"""Bracketed-Mess3 process: batched sampler, exact Bayes filter, and forgetful observers.
 
-Tokens: 0,1,2 = A,B,C   3 = '#' (open)   4,5,6 = close of type 0,1,2.
+This file is the ground truth. The filter here keeps an explicit stack, which a transformer cannot do;
+algorithm.py computes the same beliefs with operations attention can do, and is checked against it.
+
+Tokens: 0,1,2 = A,B,C   3 = '#' (open)   4,5,6 = close of type 0,1,2   7 = BOS (model input only).
 
 Each '#' opens a frame of hidden type k (uniform prior). The content tokens directly inside
 a frame are emitted by Mess3 number k. Frames nest; the depth-0 root frame never closes.
@@ -19,6 +22,7 @@ import numpy as np
 A, B, C, OPEN = 0, 1, 2, 3
 CLOSE0 = 4
 VOCAB = 7
+BOS = VOCAB
 SYMS = "ABC#)]}"
 
 
@@ -135,3 +139,7 @@ def nll(pred, toks):
 
 def show(toks):
     return "".join(SYMS[t] for t in toks)
+
+
+def encode(text):
+    return np.array([SYMS.index(c) for c in text])

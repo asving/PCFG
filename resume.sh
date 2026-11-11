@@ -12,7 +12,9 @@ CPU=("mess3 4 32 0 20000" "mess3 4 16 0 20000" "mess3 4 64 0 20000" "mess3 4 32 
 finished() {  # process layers d seed
   local name="night_d${3}_L${2}_T128_s${4}"
   [ "$1" != "mess3" ] && name="${1}_${name}"
-  [ "$(grep -c -E "tokens changed|content changed" "runs/$name.validate.txt" 2>/dev/null)" -ge 3 ]
+  local n
+  n=$(grep -c -E "tokens changed|content changed" "runs/$name.validate.txt" 2>/dev/null)
+  [ "${n:-0}" -ge 3 ]
 }
 todo_gpu=(); for s in "${GPU[@]}"; do finished $s || todo_gpu+=("$s"); done
 todo_cpu=(); for s in "${CPU[@]}"; do finished $s || todo_cpu+=("$s"); done

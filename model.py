@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from process import VOCAB
 
 
 class Block(nn.Module):
@@ -24,11 +23,11 @@ class Block(nn.Module):
 class GPT(nn.Module):
     """Pre-LN causal transformer with learned absolute positions. Input vocabulary has one extra id, BOS."""
 
-    def __init__(self, T, d, layers, heads):
+    def __init__(self, vocab, T, d, layers, heads):
         super().__init__()
-        self.tok, self.pos = nn.Embedding(VOCAB + 1, d), nn.Embedding(T, d)
+        self.tok, self.pos = nn.Embedding(vocab + 1, d), nn.Embedding(T, d)
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
-        self.lnf, self.unembed = nn.LayerNorm(d), nn.Linear(d, VOCAB)
+        self.lnf, self.unembed = nn.LayerNorm(d), nn.Linear(d, vocab)
 
     def forward(self, x):
         h = self.tok(x) + self.pos(torch.arange(x.shape[1], device=x.device))
@@ -69,7 +68,7 @@ def trace(model, x, patch=None, want_attn=True):
     return model.unembed(model.lnf(h)), resid, attn
 
 
-def load(run, args):
-    model = GPT(args["T"], args["d"], args["layers"], args["heads"])
+def load(run, args, proc):
+    model = GPT(proc.VOCAB, args["T"], args["d"], args["layers"], args["heads"])
     model.load_state_dict(torch.load(run + ".pt", map_location="cpu"))
     return model.eval()

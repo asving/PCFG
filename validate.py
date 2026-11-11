@@ -12,22 +12,22 @@ Four measurements. Each prints what the algorithm predicts next to what the netw
 import json, sys
 import numpy as np
 import torch
-from process import BracketProcess, BOS, OPEN, CLOSE0
+from process import make
 from model import GPT, trace, load
 import algorithm
 
 run = sys.argv[1]
 args = json.load(open(run + ".json"))["args"]
-proc = BracketProcess(p_open=args["p_open"], p_close=args["p_close"], max_depth=args["max_depth"])
+proc = make(args.get("process", "mess3"), p_open=args["p_open"], p_close=args["p_close"], max_depth=args["max_depth"])
 N, T, L = 768, args["T"], args["layers"]
 toks, _ = proc.sample(N, T, np.random.default_rng(2026))
 ref = algorithm.run(proc, toks)
 xin, depth, own, prev, index = ref["read"], ref["depth"], ref["own"], ref["prev"], ref["index"]
-ordinary, is_close = xin < 3, (xin >= CLOSE0) & (xin < BOS)
+ordinary, is_close = proc.is_content(xin), proc.is_close(xin)
 x = torch.from_numpy(xin)
-model = load(run, args)
+model = load(run, args, proc)
 torch.manual_seed(123)
-blank = GPT(T, args["d"], L, args["heads"]).eval()
+blank = GPT(proc.VOCAB, T, args["d"], L, args["heads"]).eval()
 J = np.arange(T)
 CATS = ["self", "own #", "own toks", "own closes", "children", "ancestors", "others", "BOS"]
 
@@ -135,11 +135,11 @@ targets = [
     ("1 depth", depth, everywhere, "early"),
     ("2 tag: distance back to own '#'", J[None] - own, depth >= 1, "after depth"),
     ("3 index: own tokens read", index, everywhere, "after tag"),
-    ("4 state belief per type (9)", ref["state"], index >= 1, "middle"),
-    ("5 evidence of the token just read (3)", ev, ordinary & (index >= 2), "middle"),
-    ("6 type log-posterior (3)", lw, index >= 1, "late"),
-    ("7 belief of the own bracket (9)", ref["belief"], everywhere, "last"),
-    ("  belief of the PARENT bracket (9)", parent, depth >= 1, "absent"),
+    (f"4 state belief per type ({proc.K * proc.S})", ref["state"], index >= 1, "middle"),
+    (f"5 evidence of the token just read ({proc.K})", ev, ordinary & (index >= 2), "middle"),
+    (f"6 type log-posterior ({proc.K})", lw, index >= 1, "late"),
+    (f"7 belief of the own bracket ({proc.K * proc.S})", ref["belief"], everywhere, "last"),
+    ("  belief of the PARENT bracket", parent, depth >= 1, "absent"),
 ]
 print(f"\n=== 2. PROBES  (R^2 on held-out sequences; residual after embedding, then after each block)")
 print("Prediction: each quantity becomes readable in the order of the algorithm's steps; the parent's belief never does.\n")
@@ -199,7 +199,7 @@ E = len(ev_b)
 xc = xin[ev_b].copy()
 p_pos = prev[ev_b, ev_q]
 R = (own[ev_b] == own[ev_b, ev_q][:, None]) & ordinary[ev_b] & (J[None] < p_pos[:, None])
-xk = np.where(R, (xc + rng.integers(1, 3, xc.shape)) % 3, xc)
+xk = np.where(R, (xc + rng.integers(1, proc.C, xc.shape)) % proc.C, xc)
 masks = {"R: the changed own tokens": R,
          "p: last own token before the child": J[None] == p_pos[:, None],
          "everything else before q": (J[None] < ev_q[:, None]) & ~R & (J[None] != p_pos[:, None]),
@@ -224,13 +224,7 @@ d_ev = alt["evidence"][rows_e, p_pos] - ref["evidence"][ev_b, p_pos]
 
 def law(logw, eta):
     w = np.exp(logw - logw.max(-1, keepdims=True))
-    w /= w.sum(-1, keepdims=True)
-    po, pc = proc.struct_probs(depth[ev_b, ev_q])
-    out = np.zeros((E, 7))
-    out[:, :3] = (1 - po - pc)[:, None] * np.einsum("eks,kxs->ex", w[..., None] * eta, proc.T.sum(-1))
-    out[:, OPEN] = po
-    out[:, CLOSE0:] = pc[:, None] * w
-    return np.log(out)
+    return np.log(algorithm.next_token_law(proc, depth[ev_b, ev_q], w / w.sum(-1, keepdims=True), eta))
 
 
 frac = lambda y: ((y - np.log(bayes0)) * dbayes).sum() / (dbayes ** 2).sum()

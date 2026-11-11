@@ -1,145 +1,211 @@
-"""Bracketed-Mess3 process: batched sampler, exact Bayes filter, and forgetful observers.
+"""Bracketed processes: batched sampler, exact Bayes filter, and forgetful observers.
 
 This file is the ground truth. The filter here keeps an explicit stack, which a transformer cannot do;
 algorithm.py computes the same beliefs with operations attention can do, and is checked against it.
 
-Tokens: 0,1,2 = A,B,C   3 = '#' (open)   4,5,6 = close of type 0,1,2   7 = BOS (model input only).
+A process is a set of K component processes that share a content vocabulary (K bracket types).
+Each open bracket has a hidden type; the content tokens directly inside it are emitted by the
+component of that type; a close token names the type. Brackets nest, and the depth-0 root never closes.
 
-Each '#' opens a frame of hidden type k (uniform prior). The content tokens directly inside
-a frame are emitted by Mess3 number k. Frames nest; the depth-0 root frame never closes.
-The bracket skeleton is visible, the frames are independent given the skeleton, so the exact
-posterior is a product over open frames of a belief over (type, Mess3 state): 9 numbers each.
+Components are generalized hidden Markov models: matrices T[token] with word probability
+eta0 T[x1] ... T[xn] r. For an ordinary HMM r is all ones and eta0 the stationary distribution.
+Tom Quantum is not an HMM (its matrices have negative entries), so sampling uses the belief vector.
 
-Observers (all know the grammar; they differ in what they keep across a return):
-  bayes      exact filter: a returning frame resumes with the belief it had at the call
-  type_only  on return keeps the type posterior, forgets the Mess3 state
-  amnesic    on return resets the parent to the prior (no memory of suspended frames)
+Token ids: content 0..C-1, then the open token(s), then K close tokens. BOS (model input only) is last.
+
+Observers (all know the grammar; they differ in what they keep across a close):
+  bayes      exact filter: a returning bracket resumes with the belief it had before the child
+  type_only  on a close keeps the parent's type posterior, forgets its component state
+  amnesic    on a close resets the parent to the prior
   blind      one belief for the whole sequence, never pushed or popped
   prior      no inference at all (structure probabilities only)
 """
 import numpy as np
 
-A, B, C, OPEN = 0, 1, 2, 3
-CLOSE0 = 4
-VOCAB = 7
-BOS = VOCAB
-SYMS = "ABC#)]}"
+
+class Component:
+    def __init__(self, name, T):
+        self.name, self.T = name, np.asarray(T, dtype=float)        # [C, S, S]
+        A = self.T.sum(0)
+        vals, right = np.linalg.eig(A)
+        r = np.real(right[:, np.argmin(np.abs(vals - 1))])
+        valsl, left = np.linalg.eig(A.T)
+        eta0 = np.real(left[:, np.argmin(np.abs(valsl - 1))])
+        r = r / r[np.argmax(np.abs(r))]                              # largest entry = 1 (ones for an HMM)
+        self.r, self.eta0 = r, eta0 / (eta0 @ r)
 
 
-def mess3(x, a):
-    """T[tok, s, s'] = P(emit tok, go to s' | s). Emission depends on the destination state."""
+def mess3(x, a, shift=0):
+    """Mess3. T[tok, s, s'] = P(emit tok, go to s' | s); the emission depends on the destination state.
+    shift != 0 gives a clock: the state advances by `shift` (mod 3) with probability 1 - 2x."""
     b = (1 - a) / 2
-    trans = np.full((3, 3), x) + np.eye(3) * (1 - 3 * x)
+    trans = np.full((3, 3), float(x))
+    for s in range(3):
+        trans[s, (s + shift) % 3] = 1 - 2 * x
     T = np.zeros((3, 3, 3))
     for tok in range(3):
         emit = np.full(3, b)
         emit[tok] = a
         T[tok] = trans * emit[None, :]
-    return T
+    return Component(f"mess3({x},{a}" + (f",shift {shift})" if shift else ")"), T)
+
+
+def tom_quantum(alpha, beta):
+    """Tom Quantum, as in simplexity's transition_matrices.py. Four tokens, three-dimensional state."""
+    g2 = 1 / (4 * (alpha ** 2 + beta ** 2))
+    c, m, o = 0.25, (alpha ** 2 - beta ** 2) * g2, 2 * alpha * beta * g2
+    T = [[[c, 0, o], [0, m, 0], [o, 0, c]],
+         [[c, 0, -o], [0, m, 0], [-o, 0, c]],
+         [[c, o, 0], [o, c, 0], [0, 0, m]],
+         [[c, -o, 0], [-o, c, 0], [0, 0, m]]]
+    return Component(f"tomq({alpha},{beta})", T)
+
+
+FAMILIES = {
+    "mess3": lambda: [mess3(0.05, 0.85), mess3(0.15, 0.6), mess3(0.45, 0.85)],
+    "mess3_sharp": lambda: [mess3(0.03, 0.9), mess3(0.2, 0.8), mess3(0.45, 0.9)],
+    "mess3_slow": lambda: [mess3(0.02, 0.6), mess3(0.08, 0.6), mess3(0.25, 0.6)],
+    "mess3_single": lambda: [mess3(0.05, 0.85)],
+    "clock3": lambda: [mess3(0.05, 0.75), mess3(0.05, 0.75, shift=1), mess3(0.05, 0.75, shift=2)],
+    # beta/alpha = tan(phi/2) for phi = 40, 80, 140 degrees; alpha = beta (phi = 90) has forbidden words
+    "tomq": lambda: [tom_quantum(1, 0.364), tom_quantum(1, 0.839), tom_quantum(1, 2.747)],
+}
+
+
+def make(name="mess3", **kw):
+    """`name` is a family in FAMILIES; the suffix '+open' makes the open token reveal the type."""
+    reveal = name.endswith("+open")
+    return BracketProcess(FAMILIES[name[:-5] if reveal else name](), reveal_at_open=reveal, name=name, **kw)
 
 
 class BracketProcess:
-    def __init__(self, params=((0.05, 0.85), (0.15, 0.6), (0.45, 0.85)),
-                 p_open=0.10, p_close=0.12, max_depth=8):
-        self.K = len(params)
+    def __init__(self, components, p_open=0.10, p_close=0.12, max_depth=8, reveal_at_open=False, name=""):
+        self.comps, self.name = components, name
+        self.K, self.reveal = len(components), reveal_at_open
         self.p_open, self.p_close, self.D = p_open, p_close, max_depth
-        self.T = np.stack([mess3(x, a) for x, a in params])        # [K, tok, s, s']
-        S = self.K * 3
-        self.S = S
-        # block-diagonal joint transition on (k, s): M[tok, (k,s), (k,s')]
-        self.M = np.zeros((3, S, S))
-        for k in range(self.K):
-            self.M[:, 3 * k:3 * k + 3, 3 * k:3 * k + 3] = self.T[k]
-        self.E = self.M.sum(-1)                                     # [tok, (k,s)] emission prob
-        self.prior = np.full(S, 1.0 / S)
+        self.T = np.stack([c.T for c in components])                 # [K, C, S, S]
+        self.eta0 = np.stack([c.eta0 for c in components])           # [K, S]
+        self.r = np.stack([c.r for c in components])                 # [K, S]
+        K, C, S = self.T.shape[:3]
+        self.C, self.S = C, S
+        self.n_open = K if reveal_at_open else 1
+        self.OPEN0, self.CLOSE0 = C, C + self.n_open
+        self.VOCAB = self.CLOSE0 + K
+        self.BOS = self.VOCAB
+        self.syms = "ABCDEFGH"[:C] + ("([{<"[:K] if reveal_at_open else "#") + ")]}>"[:K]
+        self.emit = np.einsum("kxsr,kr->kxs", self.T, self.r)        # P(x | type k) as a weight on the state
+        self.A = self.T.sum(1)                                       # [K, S, S] state map, token unseen
+        # joint over (type, state), flattened to K*S
+        self.M = np.zeros((C, K * S, K * S))
+        for k in range(K):
+            self.M[:, S * k:S * k + S, S * k:S * k + S] = self.T[k]
+        self.E = self.emit.transpose(1, 0, 2).reshape(C, K * S)
+        self.R = self.r.reshape(K * S)
+        self.prior = (self.eta0 / K).reshape(K * S)
+        self.typed_prior = np.zeros((K, K * S))                      # prior once the type is known
+        for k in range(K):
+            self.typed_prior[k, S * k:S * k + S] = self.eta0[k]
+
+    # token classes
+    def is_content(self, x):
+        return x < self.C
+
+    def is_open(self, x):
+        return (x >= self.OPEN0) & (x < self.CLOSE0)
+
+    def is_close(self, x):
+        return (x >= self.CLOSE0) & (x < self.VOCAB)
 
     def struct_probs(self, depth):
         po = np.where(depth < self.D, self.p_open, 0.0)
         pc = np.where(depth > 0, self.p_close, 0.0)
         return po, pc
 
+    def type_weights(self, belief):
+        """Type posterior from joint beliefs [..., K*S]."""
+        return (belief.reshape(belief.shape[:-1] + (self.K, self.S)) * self.r).sum(-1)
+
     def sample(self, batch, length, rng):
-        """Returns tokens [B, L] and depth [B, L] = depth of the frame that emitted each token
-        (for '#', the depth of the parent; for a close, the depth of the frame being closed)."""
-        K, D = self.K, self.D
+        """Returns tokens [B, L] and depth [B, L] = depth of the bracket that emitted each token
+        (for an open, the depth of the parent; for a close, the depth of the bracket being closed)."""
+        K, D, S, C = self.K, self.D, self.S, self.C
         typ = np.zeros((batch, D + 1), dtype=np.int64)
-        st = np.zeros((batch, D + 1), dtype=np.int64)
+        eta = np.zeros((batch, D + 1, S))
         depth = np.zeros(batch, dtype=np.int64)
         rows = np.arange(batch)
         typ[:, 0] = rng.integers(0, K, batch)
-        st[:, 0] = rng.integers(0, 3, batch)
+        eta[:, 0] = self.eta0[typ[:, 0]]
         toks = np.zeros((batch, length), dtype=np.int64)
         deps = np.zeros((batch, length), dtype=np.int64)
-        # cumulative joint over (tok, s') for each (k, s)
-        cum = self.T.transpose(0, 2, 1, 3).reshape(K, 3, 9).cumsum(-1)   # [K, s, tok*3+s']
         for t in range(length):
             po, pc = self.struct_probs(depth)
             u = rng.random(batch)
-            is_open = u < po
-            is_close = (u >= po) & (u < po + pc)
-            is_emit = ~(is_open | is_close)
-            k, s = typ[rows, depth], st[rows, depth]
+            opn = u < po
+            cls = (u >= po) & (u < po + pc)
+            emt = ~(opn | cls)
+            k, e = typ[rows, depth], eta[rows, depth]
             deps[:, t] = depth
-            v = rng.random(batch)
-            idx = (v[:, None] > cum[k, s]).sum(-1).clip(0, 8)
-            tok, s2 = idx // 3, idx % 3
-            toks[:, t] = np.where(is_emit, tok, np.where(is_open, OPEN, CLOSE0 + k))
-            st[rows, depth] = np.where(is_emit, s2, s)
-            depth = depth + is_open - is_close
-            new = is_open
-            typ[rows[new], depth[new]] = rng.integers(0, K, new.sum())
-            st[rows[new], depth[new]] = rng.integers(0, 3, new.sum())
+            probs = np.clip(np.einsum("bs,bxs->bx", e, self.emit[k]), 0, None)
+            probs /= probs.sum(-1, keepdims=True)
+            tok = (rng.random(batch)[:, None] > probs.cumsum(-1)).sum(-1).clip(0, C - 1)
+            new = np.einsum("bs,bsr->br", e, self.T[k, tok])
+            new /= (new * self.r[k]).sum(-1, keepdims=True)
+            newk = rng.integers(0, K, batch)
+            toks[:, t] = np.where(emt, tok, np.where(opn, self.OPEN0 + (newk if self.reveal else 0),
+                                                    self.CLOSE0 + k))
+            eta[rows, depth] = np.where(emt[:, None], new, e)
+            depth = depth + opn - cls
+            typ[rows[opn], depth[opn]] = newk[opn]
+            eta[rows[opn], depth[opn]] = self.eta0[newk[opn]]
         return toks, deps
 
     def filter(self, toks, mode="bayes"):
         """Returns pred [B, L, VOCAB] with pred[:, t] = P(tok_t | tok_<t) under the observer,
-        belief [B, L, S] = the active-frame belief used for that prediction,
-        resumed [B, L] = number of returns the active frame has had so far."""
+        belief [B, L, K*S] = the active-bracket belief used for that prediction,
+        resumed [B, L] = number of children of the active bracket that have closed so far."""
         batch, length = toks.shape
-        K, S, D = self.K, self.S, self.D
+        K, S, D, C = self.K, self.S, self.D, self.C
         bel = np.tile(self.prior, (batch, D + 1, 1))
         nret = np.zeros((batch, D + 1), dtype=np.int64)
         depth = np.zeros(batch, dtype=np.int64)
         rows = np.arange(batch)
-        pred = np.zeros((batch, length, VOCAB))
-        beliefs = np.zeros((batch, length, S))
+        pred = np.zeros((batch, length, self.VOCAB))
+        beliefs = np.zeros((batch, length, K * S))
         resumed = np.zeros((batch, length), dtype=np.int64)
         for t in range(length):
             slot = np.zeros(batch, dtype=np.int64) if mode == "blind" else depth
             top = np.tile(self.prior, (batch, 1)) if mode == "prior" else bel[rows, slot]
             po, pc = self.struct_probs(depth)
-            pred[:, t, :3] = (1 - po - pc)[:, None] * np.einsum("bi,xi->bx", top, self.E)
-            pred[:, t, OPEN] = po
-            pred[:, t, CLOSE0:] = pc[:, None] * top.reshape(batch, K, 3).sum(-1)
+            pred[:, t, :C] = (1 - po - pc)[:, None] * np.einsum("bi,xi->bx", top, self.E)
+            pred[:, t, self.OPEN0:self.CLOSE0] = (po / self.n_open)[:, None]
+            pred[:, t, self.CLOSE0:] = pc[:, None] * self.type_weights(top)
             beliefs[:, t] = top
             resumed[:, t] = nret[rows, depth]
             x = toks[:, t]
-            emit, opn, cls = x < 3, x == OPEN, x >= CLOSE0
-            if emit.any():
-                r = rows[emit]
-                new = np.einsum("bi,bij->bj", top[emit], self.M[x[emit]])
-                bel[r, slot[emit]] = new / new.sum(-1, keepdims=True)
+            emt, opn, cls = self.is_content(x), self.is_open(x), self.is_close(x)
+            if emt.any():
+                new = np.einsum("bi,bij->bj", top[emt], self.M[x[emt]])
+                bel[rows[emt], slot[emt]] = new / (new @ self.R)[:, None]
             depth = depth + opn - cls
             if mode != "blind":
-                bel[rows[opn], depth[opn]] = self.prior
-                nret[rows[opn], depth[opn]] = 0
+                r = rows[opn]
+                bel[r, depth[opn]] = self.typed_prior[x[opn] - self.OPEN0] if self.reveal else self.prior
+                nret[r, depth[opn]] = 0
                 r = rows[cls]
                 nret[r, depth[cls]] += 1
                 if mode == "amnesic":
                     bel[r, depth[cls]] = self.prior
                 elif mode == "type_only":
-                    w = bel[r, depth[cls]].reshape(-1, K, 3).sum(-1, keepdims=True)
-                    bel[r, depth[cls]] = np.repeat(w / 3, 3, axis=-1).reshape(-1, S)
+                    w = self.type_weights(bel[r, depth[cls]])
+                    bel[r, depth[cls]] = (w[:, :, None] * self.eta0[None]).reshape(-1, K * S)
         return pred, beliefs, resumed
+
+    def show(self, toks):
+        return "".join("^" if t == self.BOS else self.syms[t] for t in toks)
+
+    def encode(self, text):
+        return np.array([self.syms.index(c) for c in text])
 
 
 def nll(pred, toks):
     return -np.log(np.take_along_axis(pred, toks[..., None], -1)[..., 0])
-
-
-def show(toks):
-    return "".join(SYMS[t] for t in toks)
-
-
-def encode(text):
-    return np.array([SYMS.index(c) for c in text])

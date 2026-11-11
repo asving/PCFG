@@ -1,4 +1,4 @@
-"""Train a small causal transformer on the bracketed-Mess3 process.
+"""Train a small causal transformer on a bracketed process (see process.FAMILIES).
 
 At each eval it prints the network's excess loss over exact Bayes (KL from the Bayes law, mnat/token)
 in the position classes of algorithm.cells, the same columns in which algorithm.py prices each
@@ -11,7 +11,7 @@ import argparse, json, math, os, time
 import numpy as np
 import torch
 import torch.nn.functional as F
-from process import BracketProcess, VOCAB, BOS
+from process import make
 from model import GPT
 import algorithm
 
@@ -19,12 +19,13 @@ import algorithm
 def batch(proc, B, T, rng, device):
     toks, _ = proc.sample(B, T, rng)
     y = torch.from_numpy(toks)
-    x = torch.cat([torch.full((B, 1), BOS), y[:, :-1]], 1)
+    x = torch.cat([torch.full((B, 1), proc.BOS), y[:, :-1]], 1)
     return x.to(device), y.to(device), toks
 
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--process", default="mess3", help="a family in process.FAMILIES, optionally with +open")
     ap.add_argument("--d", type=int, default=128)
     ap.add_argument("--layers", type=int, default=4)
     ap.add_argument("--heads", type=int, default=4)
@@ -49,17 +50,19 @@ def main():
         torch.set_num_threads(args.threads)
     torch.manual_seed(args.seed)
     dev = torch.device(args.device)
-    proc = BracketProcess(p_open=args.p_open, p_close=args.p_close, max_depth=args.max_depth)
+    proc = make(args.process, p_open=args.p_open, p_close=args.p_close, max_depth=args.max_depth)
     rng = np.random.default_rng(args.seed + 1)
-    model = GPT(args.T, args.d, args.layers, args.heads).to(dev)
+    model = GPT(proc.VOCAB, args.T, args.d, args.layers, args.heads).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd, betas=(0.9, 0.98))
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: min(1, (s + 1) / 500) * 0.5 * (1 + math.cos(math.pi * min(1, s / args.steps))))
     name = f"{args.tag}_d{args.d}_L{args.layers}_T{args.T}_s{args.seed}"
+    if args.process != "mess3":
+        name = f"{args.process}_{name}"
 
     def step():
         x, y, _ = batch(proc, args.batch, args.T, rng, dev)
-        loss = F.cross_entropy(model(x).reshape(-1, VOCAB), y.reshape(-1))
+        loss = F.cross_entropy(model(x).reshape(-1, proc.VOCAB), y.reshape(-1))
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

@@ -233,7 +233,8 @@ if __name__ == "__main__":
           f"{np.abs(ref['pred'] - exact).max():.1e}, in belief {np.abs(ref['belief'] - beliefs).max():.1e}\n")
 
     o, cl = proc.syms[proc.OPEN0:proc.CLOSE0], proc.syms[proc.CLOSE0:]
-    text = f"{o[0]}AA{o[-1]}BBB{o[0]}C{cl[0]}B{cl[-1]}A{cl[0]}"
+    third = proc.syms[min(2, proc.C - 1)]
+    text = f"{o[0]}AA{o[-1]}BBB{o[0]}{third}{cl[0]}B{cl[-1]}A{cl[0]}"
     ex = run(proc, proc.encode(text)[None])
     print("worked example, one column per position (it has read the token shown; ^ is BOS):")
     print("read           " + "".join(f"{c:>5s}" for c in proc.show(ex["read"][0])))

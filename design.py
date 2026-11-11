@@ -23,8 +23,8 @@ from process import make, BracketProcess, FAMILIES
 import algorithm
 
 n_seq = int(sys.argv[1]) if len(sys.argv) > 1 else 512
-CANDIDATES = ["mess3", "mess3_sharp", "mess3_slow", "clock3", "tomq",
-              "mess3+open", "clock3+open", "tomq+open", "mess3_single"]
+CANDIDATES = ["mess3", "mess3_sharp", "mess3_slow", "clock3", "tomq", "fern",
+              "mess3+open", "clock3+open", "tomq+open", "fern+open", "mess3_single"]
 COLS = [("win 4", "state from last 4 own tokens", "all"),
         ("win 2", "state from last 2 own tokens", "all"),
         ("pos clock", "recency counted in positions", "all"),

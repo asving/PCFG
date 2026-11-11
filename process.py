@@ -61,6 +61,30 @@ def tom_quantum(alpha, beta):
     return Component(f"tomq({alpha},{beta})", T)
 
 
+def fanizza(alpha, lamb):
+    """FRDN ("fern"), as `fanizza` in simplexity's transition_matrices.py. Two tokens, four-dimensional
+    state. Token 0 resets the belief; token 1 rotates and shrinks it, so the belief is a function of how
+    many 1s have come since the last 0."""
+    c, s = np.cos(alpha), np.sin(alpha)
+    den = 1 - 2 * lamb * c + lamb ** 2
+    a_la, b_la = (1 - lamb * c + lamb * s) / den, (1 - lamb * c - lamb * s) / den
+    pi0 = np.array([1 - (2 / (1 - lamb) - a_la - b_la) / 4, 1 / (2 * (1 - lamb)), -a_la / 4, -b_la / 4])
+    w = np.array([1, 1 - lamb, 1 + lamb * (s - c), 1 - lamb * (s + c)])
+    db = lamb * np.array([[0, 0, 0, 0], [0, 1, 0, 0], [0, 0, c, -s], [0, 0, s, c]])
+    return Component(f"fanizza({alpha},{lamb})", np.stack([np.outer(w, pi0), db]))
+
+
+def rrxor(p1=0.5, p2=0.5):
+    """RRXOR, as in simplexity: two random bits, then their XOR. Two tokens, five states."""
+    S, Z, O, Tr, Fa = range(5)
+    T = np.zeros((2, 5, 5))
+    T[0, S, Z], T[1, S, O] = p1, 1 - p1
+    T[0, Z, Fa], T[1, Z, Tr] = p2, 1 - p2
+    T[0, O, Tr], T[1, O, Fa] = p2, 1 - p2
+    T[1, Tr, S], T[0, Fa, S] = 1.0, 1.0
+    return Component("rrxor", T)
+
+
 FAMILIES = {
     "mess3": lambda: [mess3(0.05, 0.85), mess3(0.15, 0.6), mess3(0.45, 0.85)],
     "mess3_sharp": lambda: [mess3(0.03, 0.9), mess3(0.2, 0.8), mess3(0.45, 0.9)],
@@ -68,6 +92,7 @@ FAMILIES = {
     "mess3_single": lambda: [mess3(0.05, 0.85)],
     "clock3": lambda: [mess3(0.05, 0.75), mess3(0.05, 0.75, shift=1), mess3(0.05, 0.75, shift=2)],
     # beta/alpha = tan(phi/2) for phi = 40, 80, 140 degrees; alpha = beta (phi = 90) has forbidden words
+    "fern": lambda: [fanizza(2000, 0.49), fanizza(1.0, 0.49), fanizza(3.0, 0.45)],
     "tomq": lambda: [tom_quantum(1, 0.364), tom_quantum(1, 0.839), tom_quantum(1, 2.747)],
 }
 

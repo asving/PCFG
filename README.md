@@ -17,6 +17,19 @@ Example: `#AA#BBB#C}B]A)`. The outer bracket emits `AA…A`, the middle one `BBB
 
 To predict the next token one needs, for the bracket that is currently open, a belief over (type, component state). The full Bayesian state is one such belief per open bracket, so it grows with nesting depth. A recurrent filter keeps them on a stack. A transformer has no stack and no recurrence.
 
+The pilot's process as a PCFG. `R(k,s)` is the root, which never closes; `X(k,s)` is an open bracket; `k` is the hidden type, `s` the hidden Mess3 state, `x` a content token, and `c_k` the close token of type `k`:
+
+```
+S       ->  R(k,s)                    1/9
+R(k,s)  ->  x R(k,s')                 (1 - p_o) * T_k^x[s,s']
+R(k,s)  ->  # X(j,u) R(k,s)           p_o / 9
+X(k,s)  ->  x X(k,s')                 (1 - p_o - p_c) * T_k^x[s,s']
+X(k,s)  ->  # X(j,u) X(k,s)           p_o / 9
+X(k,s)  ->  c_k                       p_c
+```
+
+`T_k^x[s,s']` is the probability that the Mess3 of type `k` goes from state `s` to `s'` and emits `x`; `p_o = 0.10`, `p_c = 0.12`; no bracket opens at depth 8. The open token is the same for every type, so every push and pop is visible in the token itself (a visibly pushdown language) but the type is not.
+
 Families of components (`process.FAMILIES`):
 
 | name | components |
@@ -25,6 +38,7 @@ Families of components (`process.FAMILIES`):
 | `mess3_sharp` | Mess3 with (0.03, 0.9), (0.2, 0.8), (0.45, 0.9) |
 | `clock3` | Mess3 (0.05, 0.75) whose state stays, advances by one, or advances by two each step |
 | `tomq` | Tom Quantum with β/α = 0.364, 0.839, 2.747 (definition from simplexity). Four content tokens. |
+| `fern` | FRDN (`fanizza` in simplexity) with (α, λ) = (2000, 0.49), (1.0, 0.49), (3.0, 0.45). Two content tokens; the belief depends on the count of the second token since the last first one. |
 | `mess3_single` | one Mess3: nothing to infer about the type |
 | any name + `+open` | K open tokens, so the type is visible from the start |
 
@@ -165,6 +179,22 @@ The same patch applied to the algorithm after its evidence step gives `R` 0.75 a
 - The parent's belief is faintly readable at child positions (0.10, control 0.02), although patching shows nothing passing through the child.
 - A probe fitted only at depth ≤ 1 fails at depth ≥ 3, while one probe fitted on all depths works at each. Not followed up.
 
+## Figures from the pilot
+
+`python figures.py runs/pilot_d128_L4_T128_s0` writes `figures/report.html` (self-contained, with the grammar above) and `bash export.sh` turns the figures into PNGs. Numbers behind them are in `figures/data.json`.
+
+**Three state beliefs at once, one plane each.** For every bracket the network holds a Mess3 belief for each possible type.
+
+![Figure 1](figures/fig1.png)
+
+**The belief is refreshed at every open, and returns at a close.** Read two ways: linearly from the last block, and from the network's own close-token probabilities.
+
+![Figure 2](figures/fig2.png)
+
+**Positions are tagged by depth and by bracket, and attention follows the bracket.**
+
+![Figure 3](figures/fig3.png)
+
 ## Which processes to train on
 
 A process is informative about a step when skipping that step is expensive, because then a network's loss shows whether the step is done. `design.py` prices every shortcut for every family (512 sequences each, no training). Excess loss in mnat/token; the pilot network reached 2.5, so differences of 5–10 are readable from a run of that size.
@@ -225,6 +255,8 @@ Each extra read costs a layer, so this is a ladder of loss floors that a sweep o
 | `model.py` | the transformer, and a hand-run forward pass that returns residuals and attention and takes patches |
 | `train.py` | training (`--process NAME`), with excess loss by position class at each eval |
 | `validate.py` | the six measurements |
+| `figures.py`, `export.sh` | figures from a trained run, as a self-contained HTML report and PNGs |
+| `flat.py` | one component alone on a flat sequence: is its belief readable from one layer |
 | `design.py` | shortcut prices across families |
 | `coupled.py` | coupled brackets: exactness check and the cost of limited reads |
 | `runs/` | training logs; checkpoints are not committed |

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Turn figures/*.html into PNGs with headless Chrome (2x pixel density). Usage: bash export.sh
+# Turn the figure pages into PNGs with headless Chrome (2x pixel density). Usage: bash export.sh [folder]
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-cd "$(dirname "$0")/figures" || exit 1
+cd "$(dirname "$0")/${1:-figures}" || exit 1
 shot() {  # name width height
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=2 \
     --user-data-dir=/tmp/chrome-headless-pcfg --window-size="$2,$3" \

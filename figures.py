@@ -18,6 +18,7 @@ from model import GPT, trace, load
 import algorithm
 
 run = sys.argv[1]
+OUT = sys.argv[2] if len(sys.argv) > 2 else "figures"
 args = json.load(open(run + ".json"))["args"]
 proc = make(args.get("process", "mess3"), p_open=args["p_open"], p_close=args["p_close"], max_depth=args["max_depth"])
 N, T, L, H = 768, args["T"], args["layers"], args["heads"]
@@ -122,6 +123,13 @@ def type_planes(X, mask):
 
 overlap = lambda P, Q: float(np.linalg.norm(P @ Q.T) ** 2 / len(P))
 pairs = [(j, k) for j in range(K) for k in range(j + 1, K)]
+ident = []
+for k in range(K):
+    flat_ = eta[busy]
+    others = np.concatenate([flat_[:, j] for j in range(K) if j != k], 1)
+    others = others - others.mean(0)
+    y_ = flat_[:, k] - flat_[:, k].mean(0)
+    ident.append(float(1 - ((y_ - others @ np.linalg.lstsq(others, y_, rcond=None)[0]) ** 2).sum() / (y_ ** 2).sum()))
 planes = {"untrained": type_planes(blank_resid[L], busy), f"after block {L - 1}": type_planes(resid[L - 1], busy),
           f"after block {L}": type_planes(resid[L], busy)}
 plane_overlap = {name: [overlap(P[j], P[k]) for j, k in pairs] for name, P in planes.items()}
@@ -316,26 +324,44 @@ def linechart(x0, y0, w_, h, series, ticks=(0, 0.25, 0.5, 0.75, 1), ylabel="R²"
 
 # ---- Figure 1 -------------------------------------------------------------------------------------
 anchors = np.stack([hexrgb(C1), hexrgb(C2), hexrgb(C3)])
+SIMPLEX = S == 3 and np.allclose(proc.r, 1)             # a 3-state HMM: draw the belief simplex
 sel = test & (index >= 1)
 body, px, gx, gy = [], 232, 24, 100
 rows = [("exact", None)] + [(f"read from the residual after block {l}", l) for l in (L - 1, L)]
 for k in range(K):
     xx = gx + 112 + k * (px + 4)
     body.append(text(xx + px / 2, gy - 6, f"{TYPES[k]}" + (f", {KIND[k]}" if KIND[k] else ""), 12, INK, "middle", "600"))
-    cols = eta[sel][:, k] @ anchors
+    E = eta[sel][:, k]
+    if SIMPLEX:
+        view, cols = (lambda Z: Z), E @ anchors
+    else:                                   # two leading directions of the exact belief, scaled into the triangle's frame
+        mu = E.mean(0)
+        dirs = np.linalg.svd(E - mu, full_matrices=False)[2][:2]
+        sc = 0.42 / max(np.abs((E - mu) @ dirs.T).max(), 1e-9)
+
+        def view(Z, mu=mu, dirs=dirs, sc=sc):
+            q = (Z - mu) @ dirs.T * sc
+            y = (q[:, 1] + 0.29) / (np.sqrt(3) / 2)
+            return np.stack([1 - (q[:, 0] + 0.5) - y / 2, q[:, 0] + 0.5 - y / 2, y], 1)
+        ang = np.arctan2(*((E - mu) @ dirs.T).T[::-1])
+        wts = np.stack([np.maximum(np.cos(ang - t), 0) + 0.05 for t in (np.pi / 2, np.pi * 7 / 6, np.pi * 11 / 6)], 1)
+        cols = wts / wts.sum(1, keepdims=True) @ anchors
     for r_, (label, l) in enumerate(rows):
-        P = eta[sel][:, k] if l is None else state_read[l][sel][:, k]
+        P = view(E if l is None else state_read[l][sel][:, k])
         uri, hpx, corners = simplex_png(P, cols, px * 2)
         pitch = hpx / 2 + 2
         yy = gy + r_ * pitch
         body.append(f'<image x="{xx}" y="{yy:.1f}" width="{px}" height="{hpx / 2:.1f}" xlink:href="{uri}" href="{uri}"/>')
-        body.append(f'<polygon points="{" ".join(f"{xx + a_ / 2:.1f},{yy + b_ / 2:.1f}" for a_, b_ in corners)}" fill="none" stroke="{AXIS}"/>')
+        if SIMPLEX:
+            body.append(f'<polygon points="{" ".join(f"{xx + a_ / 2:.1f},{yy + b_ / 2:.1f}" for a_, b_ in corners)}" fill="none" stroke="{AXIS}"/>')
         if k == 0:
             for j, piece in enumerate(label.replace(" after ", "\nafter ").replace("the residual", "\nthe residual").split("\n")):
                 body.append(text(gx, yy + hpx / 4 + j * 16, piece, 12, INK2))
 foot = gy + 3 * pitch + 16
-body.append(text(gx, foot, "Each dot is one held-out position. The corners are the three Mess3 states. A dot's colour is its exact belief under that type,", 11, MUTED))
-body.append(text(gx, foot + 15, "so the same colour in one column marks the same positions. All nine panels show the same positions.", 11, MUTED))
+body.append(text(gx, foot, ("Each dot is one held-out position. The corners are the three states." if SIMPLEX else
+                           "Each dot is one held-out position, placed by the two leading directions of the exact belief.")
+                 + " A dot's colour is set by its exact belief under that type,", 11, MUTED))
+body.append(text(gx, foot + 15, "so the same colour in one column marks the same positions. All panels show the same positions.", 11, MUTED))
 bx, by, bh, bw = 896, 330, 180, 226
 body.append(text(bx - 40, 104, "Do the three beliefs share a plane?", 13, INK, weight="600"))
 body.append(text(bx - 40, 122, f"Plane overlap (1 = same plane; chance {(S - 1) / args['d']:.2f})", 11, INK2))
@@ -356,7 +382,7 @@ chart, xs, ypos = linechart(lx, ly, lw, lh, [("type likely", C1, likely), ("type
 body.append(chart)
 body.append(legend(lx + 4, ly + 44, [("type likely (posterior > 0.5)", C1, "line"), ("type unlikely (posterior < 0.1)", C2, "line")]))
 fig1 = figure(1140, int(foot + 40), "".join(body), "1. Three state beliefs at once, one plane each",
-              "For every bracket the network holds a Mess3 belief for each possible type, whichever type the bracket turns out to be.")
+              "For every bracket the network holds a state belief for each possible type, whichever type the bracket turns out to be.")
 
 # ---- Figure 2 -------------------------------------------------------------------------------------
 body = []
@@ -491,21 +517,24 @@ css = f"""body{{margin:0;background:{PAGE};color:{INK};font-family:system-ui,-ap
 table.g{{border-collapse:collapse;font-size:14px;margin:8px 0}} table.g td{{padding:3px 18px 3px 0;vertical-align:baseline;font-variant-numeric:tabular-nums}}
 td.r{{font-family:ui-monospace,Menlo,monospace;white-space:nowrap}} td.p{{color:{INK2}}} td.c{{color:{MUTED}}} code{{font-family:ui-monospace,Menlo,monospace;font-size:13px}}
 h2{{font-size:17px;margin:0 0 8px}} .cap{{font-size:13px;color:{INK2};padding:0 24px 18px;line-height:1.5}} svg{{display:block}}"""
+content_syms, open_syms, close_syms = proc.syms[:proc.C], proc.syms[proc.OPEN0:proc.CLOSE0], proc.syms[proc.CLOSE0:]
+open_rule = sub("o", "j") if proc.reveal else "#"
 grammar = f"""<h2>The process, as a PCFG</h2>
-<p>Tokens: content <code>A B C</code>, one open bracket <code>#</code>, three close brackets <code>) ] }}</code>. A bracket has a hidden type
-<i>k</i> (one of three) and a hidden Mess3 state <i>s</i>. {sub('R','k,s')} is the root, which never closes; {sub('X','k,s')} is an open bracket.</p>
+<p>Tokens: content <code>{esc(" ".join(content_syms))}</code>, {"open brackets <code>" + esc(" ".join(open_syms)) + "</code> (one per type)" if proc.reveal else "one open bracket <code>#</code>"},
+close brackets <code>{esc(" ".join(close_syms))}</code>. A bracket has a {"type" if proc.reveal else "hidden type"}
+<i>k</i> (one of {K}) and a hidden component state <i>s</i>. {sub('R','k,s')} is the root, which never closes; {sub('X','k,s')} is an open bracket.</p>
 <table class="g">
-<tr><td class="r">S → {sub('R','k,s')}</td><td class="p">1/9</td><td class="c">type and state chosen uniformly</td></tr>
-<tr><td class="r">{sub('R','k,s')} → x {sub('R',"k,s′")}</td><td class="p">(1 − p<sub>o</sub>) · {sub('T','k')}<sup>x</sup>[s,s′]</td><td class="c">emit a content token; Mess3 of type k moves s → s′</td></tr>
-<tr><td class="r">{sub('R','k,s')} → # {sub('X','j,u')} {sub('R','k,s')}</td><td class="p">p<sub>o</sub> / 9</td><td class="c">open a child of type j in state u; then resume in the same state</td></tr>
+<tr><td class="r">S → {sub('R','k,s')}</td><td class="p">1/{K} · {sub('π','k')}(s)</td><td class="c">type uniform, state from the component's start distribution</td></tr>
+<tr><td class="r">{sub('R','k,s')} → x {sub('R',"k,s′")}</td><td class="p">(1 − p<sub>o</sub>) · {sub('T','k')}<sup>x</sup>[s,s′]</td><td class="c">emit a content token; component k moves s → s′</td></tr>
+<tr><td class="r">{sub('R','k,s')} → {open_rule} {sub('X','j,u')} {sub('R','k,s')}</td><td class="p">p<sub>o</sub> / {K} · {sub('π','j')}(u)</td><td class="c">open a child of type j in state u; then resume in the same state</td></tr>
 <tr><td class="r">{sub('X','k,s')} → x {sub('X',"k,s′")}</td><td class="p">(1 − p<sub>o</sub> − p<sub>c</sub>) · {sub('T','k')}<sup>x</sup>[s,s′]</td><td class="c"></td></tr>
-<tr><td class="r">{sub('X','k,s')} → # {sub('X','j,u')} {sub('X','k,s')}</td><td class="p">p<sub>o</sub> / 9</td><td class="c"></td></tr>
-<tr><td class="r">{sub('X','k,s')} → {sub('c','k')}</td><td class="p">p<sub>c</sub></td><td class="c">close with the token of the bracket's own type: {sub('c','1')} = ), {sub('c','2')} = ], {sub('c','3')} = }}</td></tr>
+<tr><td class="r">{sub('X','k,s')} → {open_rule} {sub('X','j,u')} {sub('X','k,s')}</td><td class="p">p<sub>o</sub> / {K} · {sub('π','j')}(u)</td><td class="c"></td></tr>
+<tr><td class="r">{sub('X','k,s')} → {sub('c','k')}</td><td class="p">p<sub>c</sub></td><td class="c">close with the token of the bracket's own type</td></tr>
 </table>
-<p>x ∈ {{A, B, C}}. {sub('T','k')}<sup>x</sup>[s,s′] is the probability that the Mess3 of type k goes from state s to s′ and emits x.
-Mess3 parameters (x, a): type <code>)</code> (0.05, 0.85), sticky; type <code>]</code> (0.15, 0.6), noisy; type <code>}}</code> (0.45, 0.85), anti-persistent.
+<p>x is a content token. {sub('T','k')}<sup>x</sup>[s,s′] is the weight with which component k goes from state s to s′ and emits x.
+Components: {esc("; ".join(f"type {close_syms[k]}: {proc.comps[k].name}" for k in range(K)))}.
 p<sub>o</sub> = {proc.p_open}, p<sub>c</sub> = {proc.p_close}; no bracket opens at depth {proc.D}; sequences are the first {T} tokens.</p>
-<p>The open token is the same for every type and only the close names it, so inside a bracket the type has to be inferred from the content.
+<p>{"The open token names the type, so nothing about the type has to be inferred." if proc.reveal else "The open token is the same for every type and only the close names it, so inside a bracket the type has to be inferred from the content."}
 Every push and pop is visible in the token itself (a visibly pushdown language), and a bracket's content is independent of everything outside it.</p>
 <p>Example: <code>{esc(example)}</code></p>"""
 net = (f"One network: {L} layers, d = {args['d']}, {H} heads, context {T}, trained {args['steps']:,} steps at batch {args['batch']} (about 12 minutes). "
@@ -515,8 +544,8 @@ caps = [
     f"Question 0. After block {L - 1} the three beliefs sit in nearly separate planes (overlap {min(plane_overlap[f'after block {L - 1}']):.2f}–{max(plane_overlap[f'after block {L - 1}']):.2f}); "
     f"after block {L} they have partly merged ({min(plane_overlap[f'after block {L}']):.2f}–{max(plane_overlap[f'after block {L}']):.2f}). "
     f"A type's belief is read as well where that type is unlikely (R² {unlikely[-1]:.2f}) as where it is likely ({likely[-1]:.2f}). "
-    "Caveats: the readouts are blurred versions of the exact fractals; and in this Mess3 family two of the three beliefs are almost linear functions "
-    "of the others (R² 0.97), so the plane estimates are weakly identified.",
+    f"Caveats: the readouts are blurred versions of the exact beliefs; and the other types' beliefs predict a type's belief linearly with R² "
+    f"{min(ident):.2f}–{max(ident):.2f} in this family, which weakens the plane estimates the closer it is to 1.",
     f"Question 1. At a # both readouts fall to the prior (1/3), from the root and from inside a bracket alike. At a close the network's own predictions put "
     f"{close_ev[2][3]:.2f} on the parent's favoured type (exact {close_ev[0][3]:.2f}); the linear readout recovers less ({close_ev[1][3]:.2f}), so the type posterior is not fully linear in the residual there. "
     f"Changing tokens outside the current bracket moves the prediction by {max(r_['net_still'] for r_ in invariance):.1f} mnat at most, "
@@ -527,21 +556,21 @@ caps = [
     "that the heads read the tag itself has not been tested causally.",
 ]
 figs = [fig1, fig2, fig3]
-os.makedirs("figures", exist_ok=True)
+os.makedirs(OUT, exist_ok=True)
 page = lambda inner, width=1140: (f'<!doctype html><html data-theme="light"><head><meta charset="utf-8"><title>Bracketed Mess3: pilot figures</title>'
                                   f'<style>{css}</style></head><body><div class="wrap" style="width:{width}px">{inner}</div></body></html>')
 cards = "".join(f'<div class="card">{f}<div class="cap">{esc(c)}</div></div>' for f, c in zip(figs, caps))
-open("figures/report.html", "w").write(page(
+open(f"{OUT}/report.html", "w").write(page(
     f'<h1>How a transformer tracks beliefs in a bracketed Mess3 process: pilot results</h1><p>{esc(net)}</p>'
     f'<div class="card"><div class="pad">{grammar}</div></div>{cards}'))
-open("figures/fig0_process.html", "w").write(page(f'<div class="card" style="margin:0"><div class="pad">{grammar}</div></div>'))
+open(f"{OUT}/fig0_process.html", "w").write(page(f'<div class="card" style="margin:0"><div class="pad">{grammar}</div></div>'))
 for i, (f, c) in enumerate(zip(figs, caps), 1):
-    open(f"figures/fig{i}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(c)}</div></div>'))
+    open(f"{OUT}/fig{i}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(c)}</div></div>'))
 tolist = lambda ev: dict(exact=ev[0].tolist(), readout=ev[1].tolist(), implied=[None if np.isnan(v) else float(v) for v in ev[2]], events=ev[3])
 json.dump(dict(plane_overlap=plane_overlap, likely=likely, unlikely=unlikely, open_from_root=tolist(open_root), open_inside=tolist(open_in),
                close=tolist(close_ev), invariance=invariance, tag_r2=tag_r2, tag_blank=tag_blank, attention_share=share.tolist(),
-               even=even.tolist(), categories=CATS, example=example, reader=reader), open("figures/data.json", "w"), indent=1)
-print("wrote figures/report.html, fig0_process.html, fig1.html, fig2.html, fig3.html, data.json")
+               even=even.tolist(), categories=CATS, example=example, reader=reader), open(f"{OUT}/data.json", "w"), indent=1)
+print(f"wrote {OUT}/report.html, fig0_process.html, fig1.html, fig2.html, fig3.html, data.json")
 for name, ev in (("open from root", open_root), ("open inside", open_in), ("close", close_ev)):
     print(f"{name} ({ev[3]} events)\n  exact   {np.round(ev[0], 2)}\n  readout {np.round(ev[1], 2)}\n  implied {np.round(ev[2], 2)}")
 print("example:", example)

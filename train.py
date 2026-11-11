@@ -102,6 +102,7 @@ def main():
             row.update(step=s, time=time.time() - t0)
             log["history"].append(row)
             json.dump(log, open(f"runs/{name}.json", "w"))
+            torch.save(model.state_dict(), f"runs/{name}.pt")
             print(f"step {s:6d} {'':27s}" + "".join(f"{1e3 * row[n]:18.1f}" for n in cs)
                   + f"   {row['time']:.0f}s", flush=True)
             if time.time() - t0 > args.time_limit:

@@ -1,0 +1,13 @@
+runs/vpa_s3_plain_d128_L2_T128_s0: vpa_s3, 2 layers; 768 sequences; share of held-out positions where a linear readout names the class
+                                                     classes    emb   blk1   blk2   chance
+depth >= 3: whole relabelling from the root                6   0.18   0.18   0.21     0.19
+depth >= 3: its sign                                       2   0.50   0.50   0.50     0.51
+depth >= 3: relabelling over the last 1 level              2   0.69   0.74   0.88     0.50
+depth >= 3: relabelling over the last 2 levels             4   0.35   0.42   0.66     0.26
+depth >= 3: relabelling over the last 3 levels             6   0.25   0.29   0.38     0.26
+depth >= 5: whole relabelling from the root                6   0.16   0.16   0.17     0.18
+depth >= 5: its sign                                       2   0.49   0.50   0.49     0.52
+depth >= 5: relabelling over the last 1 level              2   0.69   0.74   0.91     0.50
+depth >= 5: relabelling over the last 2 levels             4   0.34   0.42   0.64     0.26
+depth >= 5: relabelling over the last 3 levels             6   0.25   0.29   0.36     0.26
+depth >= 5: relabelling over the last 4 levels             6   0.21   0.23   0.24     0.21

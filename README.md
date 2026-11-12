@@ -728,6 +728,32 @@ Predictions (Claude, written before any result; `queue_vpa3.sh`):
 3. On the non-commuting process the loss grows with nesting depth more steeply than on the control at two and three layers (65%).
 4. Networks of four or more layers on the non-commuting process hold each bracket's relabelling from the root (one of six) in a linearly readable form, named correctly at more than 80% of positions after some block (60%).
 
+**First results on `vpa_s3`** (the control and the other layer counts are added below as they finish). Excess loss, mnat/token:
+
+| | all | depth 1 | depth 5 | depth ≥ 5 |
+|---|---|---|---|---|
+| observer: 0 reads down | 29.2 | 0 | | 39.0 |
+| observer: 1 read down | 15.6 | 0 | | 24.6 |
+| observer: 2 reads down | 8.3 | 0 | | 16.0 |
+| 2 layers, `vpa_s3` | 22.9 | | | 37.1 |
+| 4 layers, `vpa_s3` | 9.5 | 3.6 | 15.0 | 18.2 |
+| 4 layers, `vpa_shift` (one kind, for comparison) | 2.2 | 1.4 | 2.2 | 2.7 |
+
+At depth the 2-layer network gets almost nothing from the brackets around it, and the 4-layer network sits between one and two reads.
+
+How much of the path's relabelling the networks hold (`vpa_relabel.py`; share of held-out positions at depth ≥ 5 where a linear readout names the class, after the last block):
+
+| | classes | chance | 2 layers | 4 layers |
+|---|---|---|---|---|
+| the whole relabelling from the root | 6 | 0.18 | 0.17 | 0.19 |
+| its sign (even or odd) | 2 | 0.52 | 0.49 | 0.49 |
+| the relabelling over the last 1 level (the bracket's own kind) | 2 | 0.50 | 0.91 | 1.00 |
+| over the last 2 levels | 4 | 0.26 | 0.64 | 0.92 |
+| over the last 3 levels | 6 | 0.26 | 0.36 | 0.66 |
+| over the last 4 levels | 6 | 0.21 | 0.24 | 0.35 |
+
+On `vpa_shift` the 4-layer network names the whole relabelling (there, depth modulo 3) at 1.00. On `vpa_s3` the networks compose the relabelling exactly over a horizon of two to three levels and hold nothing global, not even the sign. The sign is the abelian part of this pair of relabellings, and here it earns nothing: knowing only that the relabelling between an ancestor and a bracket is even, or only that it is odd, leaves the bracket's type uniform given the ancestor's.
+
 ## The algebra inside each component
 
 Belief updating multiplies the state by one matrix per token, so what a component asks of a network is set by the monoid its token matrices generate, up to positive scale. `monoids.py` (output `runs/monoids.txt`) works these out.

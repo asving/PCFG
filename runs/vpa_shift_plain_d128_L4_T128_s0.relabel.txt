@@ -1,0 +1,13 @@
+runs/vpa_shift_plain_d128_L4_T128_s0: vpa_shift, 4 layers; 768 sequences; share of held-out positions where a linear readout names the class
+                                                     classes    emb   blk1   blk2   blk3   blk4   chance
+depth >= 3: whole relabelling from the root                3   0.39   0.44   0.83   0.99   0.99     0.36
+depth >= 3: its sign                                       1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 3: relabelling over the last 1 level              1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 3: relabelling over the last 2 levels             1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 3: relabelling over the last 3 levels             1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 5: whole relabelling from the root                3   0.52   0.55   0.95   1.00   1.00     0.52
+depth >= 5: its sign                                       1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 5: relabelling over the last 1 level              1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 5: relabelling over the last 2 levels             1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 5: relabelling over the last 3 levels             1   1.00   1.00   1.00   1.00   1.00     1.00
+depth >= 5: relabelling over the last 4 levels             1   1.00   1.00   1.00   1.00   1.00     1.00

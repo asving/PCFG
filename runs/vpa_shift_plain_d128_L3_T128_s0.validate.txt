@@ -1,0 +1,93 @@
+runs/vpa_shift_plain_d128_L3_T128_s0: vpa_shift, 3 layers, d = 128; 512 sequences of 128
+
+=== 1. LOSS  (excess over exact Bayes, mnat/token)
+                                                             all                        depth >= 5           new bracket, depth >= 3                 just read a close  close of a bracket with children
+share of positions                                         1.000                             0.335                             0.309                             0.293                             0.119
+no inference at all                                         73.7                              68.5                              56.6                              72.2                              75.7
+neither recursion                                           37.0                              45.8                              48.6                              38.1                              40.7
+0 reads down, all up                                        29.7                              39.5                              47.4                              20.0                              14.6
+1 read down, all up                                         15.9                              25.3                              30.3                              10.5                               7.8
+2 reads down, all up                                         8.6                              16.3                              19.8                               5.6                               4.2
+3 reads down, all up                                         4.8                              11.2                              10.9                               2.9                               2.0
+4 reads down, all up                                         2.6                               7.6                               5.9                               1.3                               0.8
+5 reads down, all up                                         1.3                               3.8                               3.0                               0.5                               0.2
+all down, 0 levels up                                        7.7                               8.4                               7.4                              10.9                              13.6
+all down, 1 level up                                         3.2                               3.1                               3.1                               4.6                               7.1
+all down, 2 levels up                                        1.1                               0.9                               1.0                               1.6                               2.5
+all down, 3 levels up                                        0.3                               0.2                               0.3                               0.5                               0.8
+coupling taken as exact                                      3.9                               8.1                               6.1                               3.0                               2.7   (every bracket's type fixed by the root's and its depth; no bracket structure needed beyond depth)
+THE NETWORK                                                  3.3                               4.4                               3.3                               4.1                               5.1
+the network by depth 0-8:   3.8  1.8  2.0  2.8  3.3  3.2  3.8  4.0  6.9
+2 reads down, all up by depth:0.0  0.0  0.0  14.8  13.9  13.0  14.0  13.4  25.5
+4 reads down, all up by depth:0.0  0.0  0.0  0.0  0.0  6.1  6.1  6.0  12.8
+all down, 1 level up by depth:3.7  2.6  2.9  3.6  3.3  3.5  3.5  2.1  3.2
+
+=== 2. PROBES  (R^2 on held-out sequences; residual after the embedding, then after each block)
+                                          emb   blk1   blk2   blk3   best untrained   from the bracket's own exact quantities
+depth                                    0.17   0.99   1.00   0.99      0.23
+distance back to own '#'                 0.22   0.31   0.54   0.56      0.22
+state belief per type (9)                0.55   0.58   0.62   0.80      0.57
+own-token evidence                       0.16   0.33   0.46   0.78      0.24
+message of the child just closed        -0.01  -0.00   0.28   0.43     -0.00
+summed messages of closed children       0.02   0.03   0.34   0.50      0.02
+type prior of the bracket (log)          0.05   0.06   0.14   0.84      0.05
+type posterior (log)                     0.15   0.18   0.33   0.82      0.16
+evidence of the PARENT at the open       0.01   0.08   0.22   0.56      0.04                     0.37
+evidence of the GRANDPARENT              0.01   0.07   0.14   0.49      0.04                     0.29
+evidence 3 levels up                     0.01   0.08   0.13   0.45      0.04                     0.24
+
+=== 3. ATTENTION  (share of each head's attention, reading positions at depth >= 3; the last two columns are single positions)
+                      own   parent   grandp    3+ up    child   deeper  off par off high      BOS    own #    pre-#
+if spread evenly     0.05     0.05     0.05     0.25     0.03     0.04     0.08     0.46     0.02     0.02     0.02
+block 1 head 0       0.05     0.05     0.05     0.23     0.03     0.04     0.08     0.47     0.02     0.02     0.02
+block 1 head 1       0.04     0.04     0.04     0.24     0.03     0.04     0.07     0.45     0.04     0.02     0.02
+block 1 head 2       0.05     0.04     0.04     0.24     0.03     0.04     0.08     0.45     0.03     0.02     0.02
+block 1 head 3       0.04     0.04     0.04     0.22     0.03     0.04     0.07     0.45     0.07     0.02     0.02
+block 2 head 0       0.20     0.09     0.03     0.16     0.13     0.04     0.09     0.16     0.09     0.10     0.05
+block 2 head 1       0.23     0.14     0.03     0.03     0.15     0.08     0.13     0.20     0.00     0.14     0.08
+block 2 head 2       0.09     0.06     0.04     0.23     0.05     0.06     0.10     0.32     0.04     0.04     0.03
+block 2 head 3       0.05     0.05     0.04     0.25     0.03     0.04     0.08     0.41     0.04     0.02     0.02
+block 3 head 0       0.06     0.05     0.00     0.31     0.03     0.00     0.04     0.26     0.24     0.00     0.03
+block 3 head 1       0.47     0.11     0.00     0.00     0.01     0.00     0.18     0.22     0.00     0.33     0.05
+block 3 head 2       0.25     0.01     0.03     0.00     0.21     0.00     0.21     0.29     0.00     0.19     0.01
+block 3 head 3       0.01     0.36     0.09     0.09     0.00     0.00     0.01     0.45     0.00     0.01     0.16
+
+the same attention, split by how much deeper the attended CONTENT token is than the reading position, mod 3
+(with this coupling a bracket's likely type is its ancestor's type plus the depth difference, so the classes are type classes)
+                  0 mod 3  1 mod 3  2 mod 3  not content
+if spread evenly     0.14     0.12     0.12         0.65
+block 1 head 0       0.10     0.09     0.09         0.72
+block 1 head 1       0.13     0.11     0.11         0.65
+block 1 head 2       0.13     0.11     0.11         0.64
+block 1 head 3       0.11     0.09     0.09         0.71
+block 2 head 0       0.18     0.12     0.10         0.59
+block 2 head 1       0.14     0.09     0.11         0.67
+block 2 head 2       0.11     0.07     0.08         0.74
+block 2 head 3       0.12     0.10     0.10         0.69
+block 3 head 0       0.14     0.00     0.00         0.86
+block 3 head 1       0.17     0.01     0.03         0.78
+block 3 head 2       0.11     0.15     0.01         0.74
+block 3 head 3       0.02     0.02     0.08         0.89
+
+=== 4. KNOCKOUTS  (192 sequences; excess loss, mnat/token)
+For the reading-attended pairs named, what is read is replaced by what the attended position offers on average when the
+sequence's content tokens are redrawn (structure kept); attention weights are kept. If the information reaches a position
+only level by level, removing the direct read costs nothing. If it is read directly, the loss rises towards the observer
+that lacks it.
+                                                               all          depth >= 5   just read a close   | all positions, one block at a time: blk1 blk2 blk3
+the network, nothing removed                                   3.6                 4.4                 4.5
+check: no pairs marked                                         3.6                 4.4                 4.5
+remove everything (all pairs)                                 81.5                76.6                82.4   |    3.7   14.9   67.9
+   observer: no inference at all                              73.3                69.7                71.0
+remove content 1+ levels up the path                          32.9                41.6                25.2   |    3.7   10.5   10.6
+   observer: 0 reads down, all up                             29.9                38.8                19.9
+remove content 2+ levels up the path                          12.1                21.7                10.1   |    3.7    7.0    6.6
+   observer: 1 read down, all up                              16.2                24.5                10.3
+remove content 3+ levels up the path                           7.6                13.2                 6.9   |    3.7    5.7    5.2
+   observer: 2 reads down, all up                              8.9                16.1                 5.7
+remove content 1+ levels inside closed brackets                13.4                16.9                17.8   |    3.7    6.7    7.4
+   observer: all down, 0 levels up                             8.2                 9.1                11.5
+remove content 2+ levels inside closed brackets                 6.4                 8.4                 7.5   |    3.6    4.5    5.0
+   observer: all down, 1 level up                              3.8                 3.7                 5.5
+remove the position just before own '#'                        5.1                 6.8                 5.6   |    3.6    4.1    4.4
+remove own '#'                                                 3.9                 4.9                 4.8   |    3.6    3.6    3.9

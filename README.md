@@ -663,7 +663,39 @@ Knockouts. For chosen (reading, attended) pairs, what is read is replaced by wha
 
 Removing the direct reads of content two or more levels up takes the network 58% of the way to the observer that never had it (10.4 between 2.4 and 16.2), and 55% for three or more levels. So more than half of what distant enclosing brackets contribute is read from their tokens directly, and the rest arrives through one further hop (block 4 reading the parent's positions, which did their own gather in block 3). Upward, content two or more levels inside a closed bracket is read directly: removing it costs what the one-level observer loses. The places a chained computation would store its results, the position before the own `#` and the `#` itself, are worth 1.6 and 0.6 mnat.
 
-So this network does both recursions at once, in two blocks, and nesting depth is not bounded by its layers. The layer sweep and the second process are below when they finish.
+So this network does both recursions largely at once, in two blocks, and nesting depth is not bounded by its layers.
+
+**Layer sweep on `vpa_shift`** (plain networks, d = 128, 20,000 steps, seed 0; `runs/vpa_shift_plain_d128_L<L>_T128_s0.validate.txt`). Excess loss, mnat/token:
+
+| | all | depth 1 | depth 5 | depth ≥ 5 | new bracket, depth ≥ 3 |
+|---|---|---|---|---|---|
+| 2 layers | 7.1 | 3.8 | 9.1 | 8.8 | 7.3 |
+| 3 layers | 3.5 | 2.0 | 3.2 | 4.3 | 3.3 |
+| 4 layers | 2.2 | 1.4 | 2.2 | 2.7 | 2.1 |
+| 6 layers | 1.3 | 0.9 | 1.3 | 1.5 | 1.1 |
+| observer: 3 reads down | 4.4 | 0 | 8.9 | 10.4 | 10.9 |
+| observer: 5 reads down | 1.1 | 0 | 0 | 3.5 | 3.0 |
+| observer: coupling taken as exact | 3.7 | 0.9 | 4.3 | 7.5 | 6.1 |
+
+- No network sits at a read-limited row. Even the 2-layer network is below the three-reads observer at depth ≥ 5, which a network chaining one read per layer could not reach.
+- Fewer layers still cost more at depth: from depth 1 to depth 5 the loss grows 2.4 times with two layers and 1.4 to 1.6 times with three or more. The 2-layer network is no better than taking the coupling as exact.
+
+What changes with layers is how the distant information travels. The same measurements as above, per network:
+
+| | 2 layers | 3 layers | 4 layers | 6 layers |
+|---|---|---|---|---|
+| blocks that touch content (removing everything read in that block changes the loss) | 1, 2 | 2, 3 | 3, 4 | 4, 5, 6 |
+| block after which the evidence of the parent / grandparent / 3 levels up is first readable (R² > 0.3) | 2 / 2 / 2 | 3 / 3 / 3 | 3 / 3 / 3 | 4 / 4 / 5 |
+| loss with nothing removed | 8.2 | 3.6 | 2.4 | 1.3 |
+| loss with direct reads of content 2+ levels up the path removed | 19.3 | 12.1 | 10.4 | 5.1 |
+| share of the way to the observer that lacks it (1 read down, 16.2) | all | 67% | 58% | 26% |
+| loss with direct reads of content 3+ levels up removed | 14.3 | 7.6 | 6.0 | 2.1 |
+| share of the way to its observer (2 reads down, 8.9) | all | 75% | 55% | 11% |
+
+- With two layers everything is read directly: removing the direct reads leaves the network no better than the observer that never had the information. This is the pure at-once computation, and it is the least accurate.
+- With six layers three quarters of what brackets two or more levels up contribute, and nine tenths of what brackets three or more levels up contribute, survives the removal of direct reads. It arrives through positions in between. The probes agree: the evidence three levels up becomes readable one block after the parent's and grandparent's.
+- So layers do not set how deep a nesting the network can process, but they set how it processes it. A shallow network adds relabelled evidence at once; a deeper one relays more of it level by level, and is more accurate for it. The extra blocks of a deeper network are split between structure (three blocks touch no content at six layers) and relays.
+
 
 ## Not yet done
 

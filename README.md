@@ -486,6 +486,19 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 - After the last block the plane holds three clusters instead: depth 0, depths 1 to 7, and depth 8 together with every unseen depth. Those are the three cases of the open and close probabilities (the root cannot close, the cap cannot open).
 - I predicted, from the angles, attention leaking to depth 8 or to the root. Depth 8 was right at depth 9 only; the root was wrong.
 
+**Hand the network the tag itself.** `tagin_d128_L4_T128_s1` is the same Mess3 network (settings and seed) with one change: each position's input embedding gains a learned vector indexed by the position of the open that opened its bracket (`train.py --tag_input`; the tag is computed in `model.GPT.embed` and equals `algorithm.py`'s at depths up to 16). Step 2 is then done for the network, and what remains to test is whether steps 3 to 7 care about depth.
+
+| excess loss within class, mnat/token, by depth | 0–7 | 8 | 9 | 10 | 11 | 12 | 13 |
+|---|---|---|---|---|---|---|---|
+| plain network | 0.6–2.1 | 8.3 | 18.1 | 32.6 | 38.9 | 45.8 | 45.7 |
+| tag in the input | 0.2–0.6 | 0.8 | 0.9 | 1.2 | 1.3 | 1.8 | 1.7 |
+
+- There is no break at the cap. The loss grows slowly and smoothly with depth, and at depths 9 to 11 it is 20 to 30 times smaller than the plain network's.
+- The heads that read the own bracket keep it: 0.89–0.91 of their attention at depths 4 to 8, and 0.88, 0.87, 0.85, 0.83 at depths 9 to 12. The state-belief probe holds (R² 0.97 at depth 7, 0.96 at 9, 0.95 at 12).
+- So everything after step 2 is close to depth-free, and the failure past the cap was the tag.
+- Against my line fixed in advance (within 3 times the loss at depth 7–8 positions not yet affected, here 0.37 mnat), depth 9 passes at 2.6 times, and depths 10, 11 and 12 miss narrowly at 3.3, 3.6 and 4.8 times. For the plain network the same ratios are 23, 42, 50 and 58.
+- Given the tag, the network stops keeping an accurate depth. A linear probe reads depth with R² 0.80 where the plain network gives 0.995, and the angle code is gone (no regular step between depths). The price is the one rule that needs depth, that the cap cannot open: on the training distribution its total excess at depth 8 is 76.6 mnat against 2.1 for the plain network, which makes its overall loss worse (1.7 mnat/token against 1.1) although it is better everywhere else (0.5–0.6 against 1.0–1.3 at depths 0 to 4).
+
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).

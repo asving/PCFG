@@ -427,9 +427,9 @@ Excess loss within class, mnat/token, by depth of the predicting position (`runs
 | type log-posterior, R² | 0.82 | 0.82 | 0.44 | 0.22 | 0.08 | −0.16 |
 | state belief per type, R² | 0.93 | 0.92 | 0.89 | 0.85 | 0.80 | 0.78 |
 
-R² here lets the probe's constant be re-estimated at each depth, so a plain shift does not count as failure. The depth count keeps rising along the same direction past the cap, but by 0.5–0.8 per level where its spread is 0.5, so neighbouring depths overlap. The bracket tag, which needs depths compared, fails at once, and the type posterior with it; the state belief degrades slowly. My reading, not tested causally: the network has not stored each depth separately, but its depth count has the resolution it needed in training and no more, and the tag is the first thing to depend on that resolution.
+R² here lets the probe's constant be re-estimated at each depth, so a plain shift does not count as failure. The depth count keeps rising along the same direction past the cap, but by 0.4–0.8 per level where its spread is 0.5, so neighbouring depths overlap. The bracket tag, which needs depths compared, fails at once, and the type posterior with it; the state belief degrades slowly. My reading, not tested causally: the network has not stored each depth separately, but its depth count has the resolution it needed in training and no more, and the tag is the first thing to depend on that resolution.
 
-Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.14 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.2–0.5 at depths 6 to 8).
+Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).
 

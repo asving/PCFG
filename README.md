@@ -774,6 +774,27 @@ On `vpa_shift` the 4-layer network names the whole relabelling (there, depth mod
 
 So what made `vpa_shift` easy was not that its relabelling commutes but that it depends on depth alone, which the network has anyway. Once the relabelling depends on which kinds lie on the path, commuting or not, these networks do not find a way to gather at once. They fall back on the recursion as we first wrote it, one read of the parent per content block, and then the number of layers does limit how much nesting they can use. That is the cost predicted for the "down" row of the first table of this project, appearing once the shortcut is gone. One seed per cell.
 
+**The layer sweep on `vpa_s3`: a ladder.** Excess loss, mnat/token (training evaluation set; `runs/vpa_s3_plain_d128_L<L>_T128_s0.*`):
+
+| | all | depth 1 | depth 5 | depth ≥ 5 |
+|---|---|---|---|---|
+| observer: 0 reads down | 29.2 | 0 | | 39.0 |
+| observer: 1 read down | 15.6 | 0 | | 24.6 |
+| observer: 2 reads down | 8.3 | 0 | | 16.0 |
+| observer: 3 reads down | 4.3 | 0 | | 10.4 |
+| 2 layers | 22.9 | 7.4 | 33.9 | 37.1 |
+| 3 layers | 15.4 | 5.6 | 24.1 | 26.5 |
+| 4 layers | 9.5 | 3.6 | 15.0 | 18.2 |
+| 6 layers | 5.4 | 2.6 | 5.9 | 9.3 |
+
+- Each network sits beside a read-limited observer: under one read at two layers, one read at three, about two at four, about three at six. This is the staircase the first table of this project predicted for coupling down the nesting, and which `vpa_shift` did not show.
+- At every layer count the loss climbs with nesting depth (4.6 times from depth 1 to depth 5 at two layers, 4.3 at three, 4.2 at four, 2.3 at six), where on `vpa_shift` it was flat from three layers up.
+- The 6-layer network reads up the path one level per head. In its last block one head puts 0.97 of its attention on the own open, one 0.96 on the parent's own tokens (0.43 on the position just before the own open), and one 0.98 on the grandparent's own tokens. Removing what is read from the position before the own open costs 5.9 mnat (5.7 to 11.6), and from the own open 4.2; on `vpa_shift` those two removals cost 1.2 and 0.4 at six layers.
+- No network holds the relabelling from the root or its sign, at any layer count (0.17 to 0.19 against chance 0.18; 0.48 to 0.49 against 0.52). The horizon over which the relabelling is composed grows slowly: two levels named at 0.64, 0.80, 0.92, 0.99 and three levels at 0.36, 0.47, 0.66, 0.63 for 2, 3, 4, 6 layers.
+- Every run was still improving slowly when its learning-rate schedule ended (last evaluations of the 6-layer run: 6.1, 5.8, 5.6, 5.4, 5.4). The ladder is at a fixed budget of 20,000 steps and one seed; a longer run might climb a step.
+
+Predictions 3 and 4 for this experiment: 3 cannot be judged (the control was not run at three layers, and at two the two processes climb alike); 4 was wrong, no network holds the whole relabelling.
+
 ## The algebra inside each component
 
 Belief updating multiplies the state by one matrix per token, so what a component asks of a network is set by the monoid its token matrices generate, up to positive scale. `monoids.py` (output `runs/monoids.txt`) works these out.
@@ -797,6 +818,7 @@ Tom Quantum shows that a group inside the monoid, even a non-solvable one, is no
 - A hand-built transformer that implements the seven steps.
 - Causal tests of the tag: overwrite one bracket's tag with another's and check that the readers switch threads. Head ablations by step. Whether the type readout equals the sum of the per-token evidence readouts.
 - A network that carries over in length: training with varied lengths or shifted positions, or a distance penalty that keeps growing past the trained range. A wider range of training depths, to see whether the plain network's depth count then extends further.
+- For the processes with kinds of open bracket: more seeds and longer training (is the ladder a matter of training time?); whether depth-relative attention lets a network reach all enclosing opens at once; an emission that depends on the sign of the relabelling, to see whether the abelian part is then learnt first; the commuting control at three and six layers.
 - The depth-rotation and tag-input networks on other seeds and on the other processes; the full validation on them; a network that must count its own depth and still compares it relatively (here the depth is counted outside the network); a causal test of the plain network's angle code.
 - Coupled brackets in `train.py` and `validate.py`; `coupled.py` is a standalone study.
 

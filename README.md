@@ -340,6 +340,60 @@ A stricter question, whether a one-layer network can hold the belief at all (20,
 
 For Tom Quantum at β/α = 2.747 one layer is a real limit: three times the training gives 7.2 mnat and 0.82, while two layers give 4.0 mnat and 0.93. So a bracket network on `tomq` needs layers for the component's own filtering on top of the bracket bookkeeping; six is a safer choice than the pilot's four.
 
+## How the probes are fitted, and whether one map serves every depth
+
+Every probe above is one linear map fitted on all positions at once: from a block's output to the active bracket's state belief under each type hypothesis (9 numbers for Mess3), whatever the depth and whatever the bracket's true type. A high pooled R² could still hide a map that works at some depths and not others. `transfer.py` checks that on four hidden-type networks (`night_d128_L4_T128_s1`, `clock3_night_d128_L4_T128_s0`, `tomq_night_d128_L6_T128_s1`, `fern_night_d128_L4_T128_s0`), with 1,536 fresh sequences, probes fitted on 1,152 and tested on the rest. Outputs are in `runs/NAME.transfer.txt`.
+
+**One map reads every depth.** R² of the pooled probe after the last block, by the depth of the tested position, beside a probe fitted at that depth only:
+
+| | depth 0 | 1 | 2 | 3 | ≥ 4 |
+|---|---|---|---|---|---|
+| Mess3, pooled | 0.946 | 0.947 | 0.946 | 0.946 | 0.944 |
+| Mess3, fitted at that depth | 0.951 | 0.950 | 0.950 | 0.950 | 0.949 |
+| clock, pooled | 0.932 | 0.928 | 0.925 | 0.925 | 0.922 |
+| clock, fitted at that depth | 0.942 | 0.934 | 0.932 | 0.932 | 0.930 |
+| Tom Quantum, pooled | 0.796 | 0.887 | 0.893 | 0.865 | 0.874 |
+| Tom Quantum, fitted at that depth | 0.803 | 0.891 | 0.897 | 0.869 | 0.880 |
+| fern, pooled | 0.843 | 0.864 | 0.855 | 0.849 | 0.837 |
+| fern, fitted at that depth | 0.863 | 0.874 | 0.867 | 0.861 | 0.854 |
+
+Sharing one map across depths costs at most 0.02.
+
+**Subspaces fitted separately at each depth coincide, except for fern's root.** For each depth alone, regress the residual on all types' state beliefs and the type posterior, and keep each type's S − 1 directions (the construction of measurement 5). Overlap between two depths, mean over types, after the last block:
+
+| | between any two depths | same depth, two halves of the data | between two types |
+|---|---|---|---|
+| Mess3 | 0.95–0.99 | 0.99 | 0.81 |
+| clock | 0.98–1.00 | 1.00 | 0.44 |
+| Tom Quantum | 0.95–0.99 | 1.00 | 0.13 |
+| fern, depths ≥ 1 | 0.94–0.96 | 0.97 | 0.53 |
+| fern, root against depth ≥ 1 | 0.46–0.50 | | |
+
+In fern the root bracket's state belief is written along different directions from a nested bracket's. The root is a different nonterminal (it never closes), so this does not break the requirement that a subspace mean the same thing everywhere, but it is one more way the root is special.
+
+**A probe fitted at one depth is not the shared map.** Fitted at depth 1 only and tested at depth 2, the Mess3 probe gives 0.931; tested at depth 0 it gives −1.37. Re-estimating only its constant at the tested depth gives 0.945 and 0.844. So among depths 1 to 3 the directions transfer and mostly a constant differs; between the root and nested brackets more differs. My reading, not tested: a probe fitted at one depth is free to put weight on directions that are quiet at that depth and carry depth or the bracket tag elsewhere. This is why the comparison above uses the directions the belief is written along and not probe weights.
+
+**Across type.** Is type k's state belief read by the same map whether or not the bracket is likely to be type k? One block before the last, yes: for Mess3 a probe fitted only where k is likely (posterior > 0.5) gives 0.889 where k is unlikely (< 0.1), against 0.914 for a probe fitted there. After the last block, no: 0.577 against 0.948 (clock 0.711 against 0.919, Tom Quantum 0.368 against 0.706, fern 0.633 against 0.852). That fits the planes merging in the last block: where k is likely, type k's belief nearly equals the bracket's mixed belief, which the last block writes for the prediction, and a probe fitted only there can read the mixture.
+
+## Does a nested position still hold the enclosing brackets' beliefs?
+
+Measurement 6 shows that changing an enclosing bracket's tokens does not change the prediction inside a child. That leaves two pictures. In the algorithm's, a position inside a child holds only the child's belief, and the parent's is rebuilt from the parent's tokens at the close. In the other, every position carries the running beliefs of all enclosing brackets and uses one. `ancestors.py` probes for the second: from positions inside a bracket, read the parent's belief as it stood when the bracket opened, which is what the close will need. R² after the last block (outputs in `runs/NAME.ancestors.txt`):
+
+| read from positions inside a bracket | Mess3 | clock | Tom Quantum | fern |
+|---|---|---|---|---|
+| own bracket, state per type | 0.95 | 0.93 | 0.88 | 0.86 |
+| own bracket, type | 0.96 | 0.95 | 0.85 | 0.82 |
+| parent, state per type | 0.19 | 0.25 | 0.12 | 0.03 |
+| parent, type | 0.05 | 0.01 | 0.02 | 0.05 |
+| grandparent, state per type | 0.03 | 0.00 | 0.00 | 0.01 |
+| root bracket, state, from depth ≥ 2 | 0.02 | 0.00 | −0.02 | 0.01 |
+| depth-1 bracket, state, from depth ≥ 2 | 0.04 | 0.03 | 0.03 | 0.01 |
+
+- The enclosing brackets' beliefs are not carried. The last two rows fix the ancestor's depth, so a stack with one slot per depth would show there; it does not.
+- The parent's state leaves a trace that fades: for Mess3 0.35 at the position that reads the open, 0.28 one to three own tokens in, 0.12 after four or more (clock 0.73, 0.33, 0.17). The parent's type, which depends on its whole thread, is never readable. A trace of the last few tokens before the open would look like this; a kept copy would not fade.
+- With the patching result (after a close, the parent's information is read from the parent's own token positions and the last own position before the child, nothing through the child), the parent's belief is rebuilt at the close.
+- Limit: these are linear probes.
+
 ## Not yet done
 
 - More seeds. The pilot is one.

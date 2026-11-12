@@ -1,0 +1,67 @@
+runs/night_d128_L4_T128_s1: mess3, 4 layers, d = 128; 1536 sequences, probes fitted on the first 1152
+fitting positions per depth: depth 0 47775, depth 1 28365, depth 2 18257, depth 3 12788, depth >= 4 23262
+
+=== A. ACROSS DEPTH  (state belief per type; rows: where the probe was fitted; columns: where it is tested)
+
+after block 3                  depth 0     depth 1     depth 2     depth 3  depth >= 4
+all depths                       0.909       0.914       0.912       0.914       0.912
+the tested depth only            0.919       0.917       0.917       0.918       0.917
+depth 0 only                     0.919      -4.401     -17.969     -34.275     -29.601
+depth 1 only                     0.764       0.917       0.898       0.749       0.007
+depth 2 only                     0.303       0.886       0.917       0.906       0.601
+depth >= 2 only                  0.391       0.882       0.916       0.917       0.915
+  same directions, constant re-estimated at the tested depth:
+depth 0 only                     0.919       0.179      -0.071      -0.096      -4.283
+depth 1 only                     0.847       0.917       0.909       0.903       0.777
+depth 2 only                     0.750       0.908       0.917       0.915       0.757
+depth >= 2 only                  0.788       0.910       0.916       0.918       0.915
+
+after block 4                  depth 0     depth 1     depth 2     depth 3  depth >= 4
+all depths                       0.946       0.947       0.946       0.946       0.944
+the tested depth only            0.951       0.950       0.950       0.950       0.949
+depth 0 only                     0.951       0.532       0.489       0.446      -0.684
+depth 1 only                    -1.370       0.950       0.931       0.836      -0.253
+depth 2 only                    -1.989       0.919       0.950       0.910      -0.498
+depth >= 2 only                 -1.083       0.930       0.949       0.949       0.948
+  same directions, constant re-estimated at the tested depth:
+depth 0 only                     0.951       0.839       0.824       0.828       0.199
+depth 1 only                     0.844       0.950       0.945       0.937       0.393
+depth 2 only                     0.805       0.944       0.950       0.944       0.183
+depth >= 2 only                  0.801       0.943       0.949       0.949       0.948
+
+untrained, all depths            0.778       0.792       0.792       0.794       0.792
+
+=== B. ACROSS TYPE  (state belief of type k; fitted and tested where k is likely (posterior > 0.5) or unlikely (< 0.1); mean over k)
+
+after block 3                 k likely  k unlikely
+all positions                    0.928       0.907
+k likely only                    0.932       0.889
+k unlikely only                  0.910       0.914
+
+after block 4                 k likely  k unlikely
+all positions                    0.954       0.943
+k likely only                    0.962       0.577
+k unlikely only                  0.909       0.948
+
+untrained, all positions         0.794       0.746
+
+=== C. SUBSPACES FITTED SEPARATELY AT EACH DEPTH  (where a type's state belief is written, as in validate.py section 5)
+Regress the residual on all types' state beliefs and the type posterior, using one depth's positions only; keep each
+type's S - 1 directions. Overlap = mean squared cosine of principal angles (1 = same subspace), mean over types.
+
+after block 3                  depth 0     depth 1     depth 2     depth 3  depth >= 4
+depth 0                           1.00        0.91        0.95        0.92        0.87
+depth 1                           0.91        1.00        0.93        0.93        0.92
+depth 2                           0.95        0.93        1.00        0.93        0.88
+depth 3                           0.92        0.93        0.93        1.00        0.89
+depth >= 4                        0.87        0.92        0.88        0.89        1.00
+for scale: same type, two halves of the sequences 0.92; different types, all depths 0.21; chance 0.02
+
+after block 4                  depth 0     depth 1     depth 2     depth 3  depth >= 4
+depth 0                           1.00        0.98        0.97        0.95        0.97
+depth 1                           0.98        1.00        0.99        0.99        0.99
+depth 2                           0.97        0.99        1.00        0.97        0.99
+depth 3                           0.95        0.99        0.97        1.00        0.98
+depth >= 4                        0.97        0.99        0.99        0.98        1.00
+for scale: same type, two halves of the sequences 0.99; different types, all depths 0.81; chance 0.02
+

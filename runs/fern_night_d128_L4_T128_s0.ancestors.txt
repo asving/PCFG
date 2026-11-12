@@ -1,0 +1,21 @@
+runs/fern_night_d128_L4_T128_s0: fern, 4 layers, d = 128; 1536 sequences, probes fitted on the first 1152
+Probed from positions inside a bracket at depth >= 1 (>= 2 for the grandparent). The parent's values are those it held when
+this bracket opened; they do not change while the bracket is open, and they are what a close has to restore.
+
+                                         positions    emb   blk1   blk2   blk3   blk4   best untrained
+OWN bracket: state per type                 107508   0.53   0.72   0.72   0.84   0.86      0.53
+OWN bracket: type log-posterior             107508  -0.00   0.02   0.03   0.17   0.82      0.00
+PARENT: state per type                      128295  -0.00   0.02   0.04   0.03   0.03      0.01
+PARENT: type log-posterior                  128295   0.00   0.03   0.06   0.05   0.05      0.02
+PARENT: belief (type x state)               128295  -0.00   0.01   0.03   0.03   0.02      0.01
+  parent state, just read the open           20787  -0.01   0.16   0.16   0.15   0.14      0.01
+  parent state, 1-3 own tokens in            44109  -0.01   0.02   0.05   0.05   0.05      0.01
+  parent state, >= 4 own tokens in           63399  -0.01   0.00   0.02   0.01   0.01      0.00
+GRANDPARENT: state per type                  81584  -0.00   0.01   0.03   0.02   0.01      0.01
+GRANDPARENT: type log-posterior              81584  -0.00   0.01   0.04   0.03   0.03      0.01
+ROOT bracket: state, from depth >= 1        128295  -0.00   0.02   0.03   0.02   0.01      0.01
+ROOT bracket: type, from depth >= 1         128295   0.01   0.04   0.06   0.05   0.05      0.03
+ROOT bracket: state, from depth >= 2         81584  -0.00   0.01   0.02   0.01   0.01      0.01
+ROOT bracket: type, from depth >= 2          81584   0.00   0.03   0.05   0.04   0.04      0.03
+DEPTH-1 bracket: state, from depth >= 2      81584  -0.01   0.01   0.02   0.01   0.01      0.00
+DEPTH-1 bracket: type, from depth >= 2       81584  -0.01  -0.00   0.00  -0.00  -0.00     -0.00

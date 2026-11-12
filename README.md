@@ -512,7 +512,7 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 - It keeps no fine depth of its own. A linear probe reads depth with R² 0.65, and the depth means fall into three groups: the root, depths 1 to 7, and the cap together with everything deeper. Those are the three cases of the open and close probabilities, and the network applies the cap's rule at every depth from 8 up (probability of an open 0.001), as training taught it.
 - Prediction (Claude, before the result): better than the plain network past the cap, but only about 45% that it passes. It passes; I underrated it.
 
-**The four networks side by side** (Mess3, 4 layers, d = 128, seed 1, 20,000 steps; excess in mnat/token):
+**The networks side by side** (Mess3, 4 layers, d = 128, seed 1, 20,000 steps; excess in mnat/token):
 
 | what the network is handed | training distribution, all positions | within class at depths 0–7 | 9 | 10 | 11 | 12 | attention on own bracket at depth 12 |
 |---|---|---|---|---|---|---|---|
@@ -520,12 +520,47 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 | depth, linearly in the input | 0.68 | 0.3–1.3 | 15.9 | 37.2 | 48.0 | 55.6 | 0.24 |
 | the bracket tag in the input | 1.68 | 0.2–0.6 | 0.9 | 1.2 | 1.3 | 1.8 | 0.83 |
 | depth as a rotation of queries and keys | 0.35 | 0.2–0.3 | 0.6 | 0.6 | 0.5 | 0.7 | 0.85 |
+| depth rotation and rotary positions (no position table; see the next section) | 0.20 | 0.1–0.2 | 0.7 | 0.6 | 0.5 | 0.5 | 0.92 |
 
 The second and fourth rows are handed the same exact depth. Given as a size along one direction it does not help past the trained depths; given so that only differences of depth enter attention, it does. So the obstacle to depth beyond training is the comparison of depths, and it goes away when that comparison is made the same at every depth. One seed and one process each.
 
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
-**Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).
+**Context length** cannot be tested on these networks. `model.py` gave them a learned position table with 128 rows, so a position past 128 has no embedding. The section "Length beyond training" below tests a network with rotary positions.
+
+## Length beyond training
+
+Every network above has a learned position table with 128 rows, so it cannot be run on a longer sequence at all. `rotboth_d128_L4_T128_s1` (`train.py --depth_rotary --pos_rotary`) has no table: besides the 8 pairs of query and key dimensions that rotate with depth, the other 8 pairs of every head rotate with position, at the usual rotary frequencies (10000^(−m/8) radians per position). Only differences of position enter attention; a 128-token prefix gives exactly the outputs it gives inside a longer sequence. Trained on 128 tokens with the same settings and seed, it is the best network so far on the training distribution (0.20 mnat/token) and keeps the depth result: 0.14–0.18 mnat within class at depths 0 to 7, and 0.65, 0.61, 0.54, 0.53 at depths 9 to 12. Those are the depth-rotation network's values, though now 5 to 6 times this network's own lower loss at depths 7–8 (0.10), so over the 3 times line by the letter.
+
+`length_ood.py` runs it on 1,500 sequences of 512 tokens from the same process, depth cap included. Excess loss over exact Bayes, mnat/token (`runs/NAME.length.txt`):
+
+| positions | all | root | depth 1–3 | depth 4+ | brackets opened at most 128 positions ago | for scale: no inference at all |
+|---|---|---|---|---|---|---|
+| 0–127 | 0.21 | 0.21 | 0.21 | 0.21 | 0.21 | 74.2 |
+| 128–255 | 15.7 | 15.4 | 19.0 | 11.2 | 14.8 | 83.1 |
+| 256–383 | 35.4 | 28.1 | 40.6 | 33.3 | 35.7 | 85.3 |
+| 384–511 | 71.0 | 51.3 | 77.2 | 75.1 | 73.4 | 85.5 |
+
+It does not carry over. The loss climbs with position at every depth and by the last band is close to doing no inference. It is not a matter of long brackets: a bracket opened within the last 128 positions does as badly as the rest.
+
+**What breaks** (`length_steps.py`, 400 sequences of 512; `runs/NAME.length_steps.txt`):
+
+| positions | 0–127 | 128–255 | 256–383 | 384–511 |
+|---|---|---|---|---|
+| excess from the open / close / content split | 0.02 | 0.05 | 0.10 | 0.25 |
+| excess from the content token and the close type | 0.17 | 16.5 | 34.4 | 71.8 |
+| reader heads: attention on the own bracket | 0.94 | 0.73 | 0.56 | 0.33 |
+| reader heads: on other tokens less than 128 back | 0.06 | 0.07 | 0.05 | 0.04 |
+| reader heads: on other tokens 128 or more back | 0.00 | 0.20 | 0.38 | 0.63 |
+| probe, distance back to own `#` (fitted on 0–127), R² | 0.95 | 0.31 | 0.16 | 0.03 |
+| probe, state belief per type, R² | 0.99 | 0.92 | 0.84 | 0.68 |
+| probe, type log-posterior, R² | 0.96 | 0.75 | 0.61 | 0.41 |
+
+- The network still knows whether it is at the root, in the middle or at the cap: the split between open, close and content stays right. What it loses is its bracket, the same step that failed with depth.
+- The lost attention goes to tokens further back than any distance seen in training. Among tokens less than 128 back the heads separate their own bracket from the rest as well as ever (0.04–0.07 leaks, as in the trained band). Training shaped each score as a function of distance only up to 127; nothing taught a head to ignore a token 200 positions back.
+- Causal check on the same network: hide from every position the keys 128 or more positions back (BOS kept). The loss in the three later bands falls from 16.6, 34.5, 72.0 to 6.2, 9.3, 12.7. So most of the failure is those far tokens, and a remainder is not. Part of the remainder is information the window hides, which the exact law uses.
+- There is also a dependence on the distance to BOS. With rotary positions, shifting every position by 300 changes nothing (0.20 mnat either way), but moving only BOS further away, on sequences of the trained length, costs 3.8 to 7.5 mnat for shifts of 16 to 256. The network uses BOS to place itself, and that is tied to the trained length.
+- Predictions (Claude, before the result): a pass in the band 128–255 about 40%, in the later bands about 25%; it failed in all. Nested brackets better than the root, about 70%: wrong, they are worse in the later bands (77 against 51 mnat). Depth result kept, about 80%: kept in absolute terms, not by the 3 times ratio.
 
 ## Not yet done
 
@@ -535,7 +570,7 @@ Within the trained range the count is not noisier late in the sequence (`depth_n
 - Fewer and more layers. The algorithm suggests about four attention steps.
 - A hand-built transformer that implements the seven steps.
 - Causal tests of the tag: overwrite one bracket's tag with another's and check that the readers switch threads. Head ablations by step. Whether the type readout equals the sum of the per-token evidence readouts.
-- Context length beyond 128, which needs a network trained with a position scheme that extends. A wider range of training depths, to see whether the depth count then extends further.
+- A network that carries over in length: training with varied lengths or shifted positions, or a distance penalty that keeps growing past the trained range. A wider range of training depths, to see whether the plain network's depth count then extends further.
 - The depth-rotation and tag-input networks on other seeds and on the other processes; the full validation on them; a network that must count its own depth and still compares it relatively (here the depth is counted outside the network); a causal test of the plain network's angle code.
 - Coupled brackets in `train.py` and `validate.py`; `coupled.py` is a standalone study.
 

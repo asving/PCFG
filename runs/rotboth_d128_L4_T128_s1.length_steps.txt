@@ -1,0 +1,42 @@
+runs/rotboth_d128_L4_T128_s1: mess3, trained on 128 tokens; 400 sequences of 512
+
+=== A. EXCESS LOSS, mnat/token
+positions                              0-127   128-255   256-383   384-511
+total                                   0.19     16.58     34.54     72.00
+  open / close / content split          0.02      0.05      0.10      0.25
+  content token and close type          0.17     16.53     34.44     71.75
+network P(close) at the root           0.000     0.000     0.000     0.000   (exact: 0)
+network P(open) at depths 1-7          0.100     0.100     0.100     0.101   (exact: 0.1)
+
+=== B. ATTENTION.  Reader heads (more than half on the own bracket in the trained band): block 1 head 0, block 1 head 2, block 1 head 3, block 2 head 0, block 2 head 1, block 2 head 2, block 2 head 3, block 3 head 0, block 3 head 1, block 3 head 2, block 3 head 3, block 4 head 0, block 4 head 1, block 4 head 2, block 4 head 3
+positions                              0-127   128-255   256-383   384-511
+readers: own bracket                    0.94      0.73      0.56      0.33
+readers: BOS                            0.00      0.00      0.00      0.00
+readers: elsewhere, < 128 back          0.06      0.07      0.05      0.04
+readers: elsewhere, >= 128 back         0.00      0.20      0.38      0.63
+(share of earlier positions >= 128 back)      0.00      0.31      0.60      0.71
+block 4 head 2: share on BOS            0.34      0.23      0.22      0.20
+block 3 head 1: share on BOS            0.19      0.10      0.06      0.05
+block 2 head 0: share on BOS            0.14      0.12      0.03      0.07
+block 1 head 1: share on BOS            0.13      0.00      0.00      0.02
+
+=== C. PROBES fitted on positions 0-127 of 300 sequences, applied unchanged to the other sequences (R^2)
+                             block     0-127   128-255   256-383   384-511
+depth                            2      0.56      0.52      0.54      0.53
+distance back to own #           3      0.95      0.31      0.16      0.03
+state belief per type            2      0.99      0.92      0.84      0.68
+type log-posterior               4      0.96      0.75      0.61      0.41
+
+=== D. MOVE ONLY BOS  (1024 sequences of the trained length 128; excess loss, mnat/token)
+every position shifted by 300 (BOS too): 0.20   (unshifted: 0.20)
+BOS moved further away by:           0       16       32       64      128      256      384
+excess loss                       0.20     3.80     4.63     5.94     5.45     7.46     1.03
+
+=== E. HIDE THE KEYS 128 OR MORE POSITIONS BACK  (same 400 sequences of 512; excess loss over the exact law, mnat/token)
+positions                              0-127   128-255   256-383   384-511
+the network as it is                    0.19     16.58     34.54     72.00
+far keys hidden, BOS kept               0.19      6.23      9.26     12.74
+   at depth >= 1 only                   0.18      6.14      8.90     11.72
+far keys hidden, BOS too                0.19     23.95     27.86     28.12
+   at depth >= 1 only                   0.18      5.20      6.73      8.92
+the network as it is, depth >= 1        0.18     16.38     37.10     76.59

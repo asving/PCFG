@@ -21,16 +21,31 @@ class Block(nn.Module):
 
 
 class GPT(nn.Module):
-    """Pre-LN causal transformer with learned absolute positions. Input vocabulary has one extra id, BOS."""
+    """Pre-LN causal transformer with learned absolute positions. Input vocabulary has one extra id, BOS.
 
-    def __init__(self, vocab, T, d, layers, heads):
+    depth_in = (first open id, first close id) adds the nesting depth to the input, linearly: the embedding
+    of a position gains depth / 4 times one learned vector, where depth counts the opens minus the closes
+    read so far (including the position's own token). The count is done here, not by the network."""
+
+    def __init__(self, vocab, T, d, layers, heads, depth_in=None):
         super().__init__()
         self.tok, self.pos = nn.Embedding(vocab + 1, d), nn.Embedding(T, d)
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.lnf, self.unembed = nn.LayerNorm(d), nn.Linear(d, vocab)
+        self.vocab, self.depth_in = vocab, depth_in
+        if depth_in is not None:
+            self.dep = nn.Linear(1, d, bias=False)
+
+    def embed(self, x):
+        h = self.tok(x) + self.pos(torch.arange(x.shape[1], device=x.device))
+        if self.depth_in is not None:
+            o, c = self.depth_in
+            depth = ((x >= o) & (x < c)).float().cumsum(1) - ((x >= c) & (x < self.vocab)).float().cumsum(1)
+            h = h + self.dep(depth[..., None] / 4)
+        return h
 
     def forward(self, x):
-        h = self.tok(x) + self.pos(torch.arange(x.shape[1], device=x.device))
+        h = self.embed(x)
         for b in self.blocks:
             h = b(h)
         return self.unembed(self.lnf(h))
@@ -52,7 +67,7 @@ def trace(model, x, patch=None, want_attn=True):
             h = torch.where(mask[..., None], values, h)
         return h
 
-    h = apply(0, model.tok(x) + model.pos(torch.arange(T)))
+    h = apply(0, model.embed(x))
     resid, attn = [h], []
     future = torch.triu(torch.ones(T, T, dtype=torch.bool), 1)
     for l, blk in enumerate(model.blocks, 1):
@@ -69,6 +84,7 @@ def trace(model, x, patch=None, want_attn=True):
 
 
 def load(run, args, proc):
-    model = GPT(proc.VOCAB, args["T"], args["d"], args["layers"], args["heads"])
+    model = GPT(proc.VOCAB, args["T"], args["d"], args["layers"], args["heads"],
+                depth_in=(proc.OPEN0, proc.CLOSE0) if args.get("depth_input") else None)
     model.load_state_dict(torch.load(run + ".pt", map_location="cpu"))
     return model.eval()

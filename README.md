@@ -429,6 +429,25 @@ Excess loss within class, mnat/token, by depth of the predicting position (`runs
 
 R² here lets the probe's constant be re-estimated at each depth, so a plain shift does not count as failure. The depth count keeps rising along the same direction past the cap, but by 0.4–0.8 per level where its spread is 0.5, so neighbouring depths overlap. The bracket tag, which needs depths compared, fails at once, and the type posterior with it; the state belief degrades slowly. My reading, not tested causally: the network has not stored each depth separately, but its depth count has the resolution it needed in training and no more, and the tag is the first thing to depend on that resolution.
 
+**Is the failure the algorithm run on the network's own depth?** (Asvin's test.) `depth_plug.py` reads depth off the network with the linear probe, hands that reading to `algorithm.py` in place of the exact count (in step 2, two positions are at the same depth when their readings differ by less than 0.5), and compares the result with the network. Mess3, sequences that go deeper than 8, mnat/token within class (`runs/NAME.depth_plug.txt`):
+
+| depth | 5 | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|---|
+| the network, excess over exact | 1.4 | 1.7 | 2.0 | 8.4 | 17.7 | 34.4 | 40.8 |
+| the algorithm given the read depth, excess over exact | 8.9 | 19.1 | 27.3 | 30.1 | 24.9 | 23.5 | 27.0 |
+| share of positions where that algorithm picks a wrong `#` | 0.07 | 0.16 | 0.26 | 0.29 | 0.24 | 0.24 | 0.24 |
+| the network where it picks the right `#` | 1.0 | 1.0 | 0.8 | 2.0 | 10.2 | 26.0 | 30.9 |
+| the network where it picks a wrong `#` | 5.7 | 5.4 | 5.5 | 24.3 | 41.2 | 60.9 | 71.6 |
+| distance from the network to that algorithm (KL) | 9.8 | 19.6 | 27.5 | 35.0 | 24.6 | 31.5 | 35.2 |
+
+- It does not match. Within the trained depths the algorithm given the read depth is far worse than the network (27.3 against 2.0 at depth 7), and beyond the cap it stays near 25 while the network climbs to 41. Position by position it is as far from the network as the exact algorithm is (the last row against the first).
+- The reading does say where the network fails: the network's loss is 2 to 12 times higher at positions where the read depth points to the wrong bracket.
+- Mislocating the bracket is not the whole failure. Where the read depth points to the right bracket, the network still loses 26 to 31 mnat at depths 10 and 11.
+- The tolerance decides the size: at depth 9 the algorithm's excess is 43.9, 24.9, 14.8 and 11.2 for tolerances 0.3, 0.5, 0.75 and 1.0, and at depth 7 it is 48.2, 27.3, 15.0 and 7.2. No value gives the network's flat loss within the cap together with its rise beyond.
+- The clock network gives the same picture (53.8 against 2.3 at depth 7; 58–65 against 21–45 at depths 9 to 11).
+- So the network does not find its bracket by comparing depths as a linear probe reads them. Within the trained range it knows its bracket better than that reading allows. Either depth is held in a sharper, non-linear form that the probe blurs, or the bracket is found by a route that does not pass through an absolute depth. Not yet separated.
+- Prediction (Claude, before the run): the reading would pick out where the network fails but overshoot the size. Right on the first; on the second it overshoots within the cap and undershoots beyond depth 9.
+
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).

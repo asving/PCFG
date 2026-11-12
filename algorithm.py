@@ -55,12 +55,15 @@ def next_token_law(proc, depth, w, eta):
     return pred
 
 
-def run(proc, toks, tag="bracket", clock="thread", window=None, infer_type=True, chunk=256):
-    outs = [_run(proc, toks[a:a + chunk], tag, clock, window, infer_type) for a in range(0, len(toks), chunk)]
+def run(proc, toks, tag="bracket", clock="thread", window=None, infer_type=True, chunk=256, depth_read=None, tol=0.5):
+    """depth_read [B, T], optional: use these (possibly non-integer) depths in step 2 in place of the exact
+    count. Two positions then count as the same depth when their values differ by less than `tol`."""
+    outs = [_run(proc, toks[a:a + chunk], tag, clock, window, infer_type,
+                 None if depth_read is None else depth_read[a:a + chunk], tol) for a in range(0, len(toks), chunk)]
     return {k: np.concatenate([o[k] for o in outs]) for k in outs[0]}
 
 
-def _run(proc, toks, tag, clock, window, infer_type):
+def _run(proc, toks, tag, clock, window, infer_type, depth_read=None, tol=0.5):
     B, T = toks.shape
     K, S = proc.K, proc.S
     xin = read_tokens(proc, toks)
@@ -71,6 +74,8 @@ def _run(proc, toks, tag, clock, window, infer_type):
     # 1. depth: a running count
     depth = np.cumsum(is_open.astype(np.int64) - is_close, 1)
     same_depth = depth[:, :, None] == depth[:, None, :]     # [b, i, j]
+    if depth_read is not None:                              # a depth read off a network, used as the network would have to
+        same_depth = np.abs(depth_read[:, :, None] - depth_read[:, None, :]) < tol
 
     # 2. tag: the most recent open at my depth; equal tags = same bracket
     openlike = is_open | (J == 0)[None]
@@ -128,7 +133,7 @@ def _run(proc, toks, tag, clock, window, infer_type):
     # 6. type posterior: sum the thread's evidence onto the prior (known type if the open revealed it)
     base = np.full((B, T, K), np.log(1 / K))
     if proc.reveal:
-        shown = np.take_along_axis(xin, own, 1) - proc.OPEN0                     # type named by the own open
+        shown = np.take_along_axis(xin, np.maximum(own, 0), 1) - proc.OPEN0      # type named by the own open
         known = own >= 1
         base = np.where(known[..., None], np.where(np.arange(K) == shown[..., None], 0.0, -1e9), base)
     logw = base + (np.einsum("bij,bjk->bik", own_tok.astype(float), evidence) if infer_type else 0.0)

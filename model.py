@@ -30,6 +30,7 @@ class Block(nn.Module):
 
 
 ROT_PERIODS = (2, 3, 5, 7, 11, 16, 32, 64)                  # in levels of depth; one pair of dimensions each
+POS_BASE = 10000.0                                          # rotary position: pair m turns by POS_BASE ** (-m / M) per position
 
 
 def rotate(t, rot):
@@ -53,11 +54,16 @@ class GPT(nn.Module):
                position's bracket (0 for the root): the bracket tag of algorithm.py, step 2.
     depth_rot  in every block, the first pairs of query and key dimensions of every head are rotated by
                depth times a fixed frequency (periods ROT_PERIODS), as rotary embeddings do with position.
-               A score between two positions then depends on their depths only through the difference."""
+               A score between two positions then depends on their depths only through the difference.
 
-    def __init__(self, vocab, T, d, layers, heads, depth_in=None, tag_in=None, depth_rot=None):
+    pos_rot=True replaces the learned position table by rotary position embeddings on the next
+    len(ROT_PERIODS) pairs of query and key dimensions, so the network has no table tied to a length."""
+
+    def __init__(self, vocab, T, d, layers, heads, depth_in=None, tag_in=None, depth_rot=None, pos_rot=False):
         super().__init__()
-        self.tok, self.pos = nn.Embedding(vocab + 1, d), nn.Embedding(T, d)
+        self.tok, self.pos_rot = nn.Embedding(vocab + 1, d), pos_rot
+        if not pos_rot:
+            self.pos = nn.Embedding(T, d)
         self.blocks = nn.ModuleList([Block(d, heads) for _ in range(layers)])
         self.lnf, self.unembed = nn.LayerNorm(d), nn.Linear(d, vocab)
         self.vocab, self.depth_in, self.tag_in, self.depth_rot = vocab, depth_in, tag_in, depth_rot
@@ -73,7 +79,7 @@ class GPT(nn.Module):
 
     def embed(self, x):
         J = torch.arange(x.shape[1], device=x.device)
-        h = self.tok(x) + self.pos(J)
+        h = self.tok(x) if self.pos_rot else self.tok(x) + self.pos(J)
         if self.depth_in is not None:
             h = h + self.dep(self.depth(x, self.depth_in)[0][..., None] / 4)
         if self.tag_in is not None:                         # the most recent open at my depth; BOS opens the root
@@ -84,9 +90,21 @@ class GPT(nn.Module):
         return h
 
     def rotation(self, x):
-        if self.depth_rot is None:
+        """cos and sin of the angle by which each rotated pair of query and key dimensions turns, [B, 1, T, pairs]:
+        the depth pairs first, then the position pairs."""
+        if self.depth_rot is None and not self.pos_rot:
             return None
-        ang = self.depth(x, self.depth_rot)[0][:, None, :, None] * (2 * torch.pi / torch.tensor(ROT_PERIODS, device=x.device, dtype=torch.float32))
+        B, T = x.shape
+        M = len(ROT_PERIODS)
+        if self.depth_rot is not None:
+            period = torch.tensor(ROT_PERIODS, device=x.device, dtype=torch.float32)
+            parts = [self.depth(x, self.depth_rot)[0][:, None, :, None] * (2 * torch.pi / period)]
+        else:
+            parts = [torch.zeros(B, 1, T, M, device=x.device)]
+        if self.pos_rot:
+            freq = POS_BASE ** (-torch.arange(M, device=x.device, dtype=torch.float32) / M)
+            parts.append((torch.arange(T, device=x.device, dtype=torch.float32)[None, None, :, None] * freq).expand(B, 1, T, M))
+        ang = torch.cat(parts, -1)
         return ang.cos(), ang.sin()
 
     def forward(self, x):
@@ -131,6 +149,6 @@ def load(run, args, proc):
     ids = (proc.OPEN0, proc.CLOSE0)
     model = GPT(proc.VOCAB, args["T"], args["d"], args["layers"], args["heads"],
                 depth_in=ids if args.get("depth_input") else None, tag_in=ids if args.get("tag_input") else None,
-                depth_rot=ids if args.get("depth_rotary") else None)
+                depth_rot=ids if args.get("depth_rotary") else None, pos_rot=bool(args.get("pos_rotary")))
     model.load_state_dict(torch.load(run + ".pt", map_location="cpu"))
     return model.eval()

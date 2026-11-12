@@ -8,3 +8,4 @@ logs/
 
 figures/*/*.html
 figures/example_*.html
+!figures/example_simplex.html

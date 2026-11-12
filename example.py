@@ -186,6 +186,86 @@ def draw(title, d):
             + "".join(out) + "</svg>")
 
 
+def draw_simplex(title, d, per_row=20):
+    """The same sequence with every belief drawn as a point in a triangle, one triangle per position."""
+    proc = d["proc"]
+    cw, x0, side = 46.0, 150, 34.0
+    hgt = side * np.sqrt(3) / 2
+    close_names = proc.syms[proc.CLOSE0:]
+    is_open, is_close = proc.is_open(d["read"]), proc.is_close(d["read"])
+    cur_type = [int(d["typed"][d["own"][i]]) if d["own"][i] >= 1 else None for i in range(W)]
+    spans, stack = [], []
+    for i in range(W):
+        if is_open[i]:
+            stack.append([i, W - 1, len(stack) + 1, int(d["typed"][i])])
+        elif is_close[i]:
+            sp = stack.pop()
+            sp[1] = i
+            spans.append(sp)
+    spans += stack
+    lanes = max([sp[2] for sp in spans] + [1])
+    rows = [("type", d["w"], d["w_read"])] + [(f"state, if type {close_names[k]}", d["state"][:, k], d["state_read"][:, k]) for k in range(K)]
+
+    def point(p, cx, top):
+        p = np.clip(p, 0, None)
+        p = p / max(p.sum(), 1e-9)
+        return cx - side / 2 + (p[1] + 0.5 * p[2]) * side, top + hgt - p[2] * hgt
+
+    out, y = [], 96
+    for r0 in range(0, W, per_row):
+        cols = range(r0, min(r0 + per_row, W))
+        xs = lambda i: x0 + (i - r0) * cw
+        for o, c, lane, typ in spans:                       # the part of each bracket bar that falls in this row
+            lo, hi = max(o, r0), min(c, r0 + per_row - 1)
+            if lo <= hi:
+                x1 = xs(lo) + (4 if lo == o else 0)
+                x2 = xs(hi) + cw - (4 if hi == c else 0)
+                out.append(f'<rect x="{x1:.1f}" y="{y + (lanes - lane) * 8}" width="{x2 - x1:.1f}" height="5" rx="2.5" fill="{TYPE_COL[typ]}"/>')
+        y += lanes * 8 + 14
+        for i in cols:
+            ch_ = "^" if d["read"][i] == proc.BOS else proc.syms[d["read"][i]]
+            strong = is_open[i] or is_close[i]
+            out.append(text(xs(i) + cw / 2, y, ch_, 13, INK if strong else MUTED, "middle", "700" if strong else "400"))
+        out.append(text(24, y, "token read", 11, INK2))
+        y += 8
+        top = y
+        for label, exact, net in rows:
+            out.append(text(24, y + hgt / 2 + 6, label, 11, INK2))
+            for i in cols:
+                cx = xs(i) + cw / 2
+                tri = f"{cx - side / 2:.1f},{y + hgt:.1f} {cx + side / 2:.1f},{y + hgt:.1f} {cx:.1f},{y:.1f}"
+                out.append(f'<polygon points="{tri}" fill="none" stroke="{AXIS}" stroke-width="1"/>')
+                ex_, ey_ = point(exact[i], cx, y)
+                nx_, ny_ = point(net[i], cx, y)
+                col = TYPE_COL[cur_type[i]] if cur_type[i] is not None else INK2
+                out.append(f'<circle cx="{nx_:.1f}" cy="{ny_:.1f}" r="3" fill="{col}"><title>{esc(label)}, position {i}: network {np.round(net[i], 2)}, exact {np.round(exact[i], 2)}</title></circle>')
+                out.append(f'<circle cx="{ex_:.1f}" cy="{ey_:.1f}" r="5" fill="none" stroke="{INK}" stroke-width="1.1"/>')
+            y += hgt + 17
+        for i in cols:                                      # guides at every open and close
+            if is_open[i] or is_close[i]:
+                xg = xs(i) + (0.5 if is_open[i] else cw - 0.5)
+                out.append(f'<line x1="{xg:.1f}" y1="{top - 2}" x2="{xg:.1f}" y2="{y - 14}" stroke="{INK}" stroke-opacity="0.3" stroke-width="1"/>')
+        y += 10
+    # key
+    kx, ky, ks = 800, 40, 46.0
+    kh = ks * np.sqrt(3) / 2
+    for j, (names, lab) in enumerate(((["type " + c for c in close_names], "type row"), ([f"state {s_ + 1}" for s_ in range(S)], "state rows"))):
+        cx = kx + j * 170
+        out.append(f'<polygon points="{cx - ks / 2:.1f},{ky + kh:.1f} {cx + ks / 2:.1f},{ky + kh:.1f} {cx:.1f},{ky:.1f}" fill="none" stroke="{AXIS}"/>')
+        out += [text(cx - ks / 2 - 4, ky + kh + 4, names[0], 10, MUTED, "end"), text(cx + ks / 2 + 4, ky + kh + 4, names[1], 10, MUTED),
+                text(cx + 6, ky + 4, names[2], 10, MUTED)]
+    out.append(f'<circle cx="24" cy="70" r="5" fill="none" stroke="{INK}" stroke-width="1.1"/>' + text(34, 74, "exact", 11, INK2))
+    out.append(f'<circle cx="92" cy="70" r="3" fill="{INK2}"/>' + text(100, 74, "network (linear readout); its colour is the current bracket's type:", 11, INK2))
+    for k in range(K):
+        out.append(f'<circle cx="{456 + k * 62}" cy="70" r="3" fill="{TYPE_COL[k]}"/>' + text(464 + k * 62, 74, f"type {close_names[k]}", 11, INK2))
+    out.append(f'<circle cx="{456 + K * 62}" cy="70" r="3" fill="{INK2}"/>' + text(464 + K * 62, 74, "root", 11, INK2))
+    h = int(y + 6)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="{h}" viewBox="0 0 1140 {h}"><rect width="1140" height="{h}" fill="{SURF}"/>'
+            + text(24, 34, title, 17, INK, weight="600")
+            + text(24, 54, "One triangle per position, after reading the token above it. A dot in a ring means the network agrees with exact Bayes.", 12, INK2)
+            + "".join(out) + "</svg>")
+
+
 css = f"""body{{margin:0;background:{PAGE};color:{INK};font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light}}
 .wrap{{width:1140px;margin:0 auto;padding:28px 0 40px}} h1{{font-size:22px;margin:0 0 6px}} p{{font-size:14px;line-height:1.5;color:{INK2};margin:6px 0}}
 .card{{background:{SURF};border:1px solid rgba(11,11,11,0.10);border-radius:10px;margin:16px 0;overflow:hidden}} svg{{display:block}}
@@ -196,12 +276,21 @@ cap = ("The same sequence is shown to two networks; only the open token differs.
        "starting value, and just past its right end the columns repeat what the enclosing bracket held just before the bar began. "
        "'Probe' rows are linear readouts of the last block, fitted on other sequences. 'Close odds' needs no probe: it is the network's own "
        "probability for each close token, renormalised, and exists only inside brackets.")
+cap_s = ("The same sequence is shown to two networks; only the open token differs. At every open the three state points jump to the centre of "
+         "their triangle (the starting belief); the type point jumps to the centre when the open is #, and straight to a corner when the open "
+         "names the type. Just past every close, all four points jump back to where they were in the last triangle before that bracket opened. "
+         "Bars above the tokens mark each bracket from its open to its close.")
+simplex = {name: draw_simplex(title, d) for name, title, d in runs}
 figs = {name: draw(title, d) for name, title, d in runs}
 os.makedirs("figures", exist_ok=True)
 open("figures/example.html", "w").write(page(
     "<h1>One sequence, belief by belief</h1><p>" + esc(cap) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in figs.values())))
 for name, f in figs.items():
     open(f"figures/example_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap)}</div></div>'))
+open("figures/example_simplex.html", "w").write(page(
+    "<h1>One sequence, belief by belief, on the simplex</h1><p>" + esc(cap_s) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in simplex.values())))
+for name, f in simplex.items():
+    open(f"figures/example_simplex_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_s)}</div></div>'))
 print("sequence (hidden opens):", proc_h.show(tok_h[0, :W - 1]))
 print("sequence (typed opens): ", proc_o.show(tok_o[0, :W - 1]))
 for name, _, d in runs:

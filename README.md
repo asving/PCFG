@@ -197,9 +197,13 @@ The same patch applied to the algorithm after its evidence step gives `R` 0.75 a
 
 **One sequence, belief by belief** (`python example.py RUN_HIDDEN RUN_OPEN`, written to `figures/example.html`). The two processes differ only in the open token, so both networks are shown the same sequence. Each column is a position; rows are the type posterior of the current bracket and the state belief under each type, exact and as read from the network. The sequence was picked from 6,000 samples for having brackets of different types opened inside one another; the networks are the 20,000-step `mess3` and `mess3+open` runs.
 
-![Hidden opens](figures/example_hidden.png)
+Each belief is drawn as a point in a triangle: a ring for exact Bayes, a dot for the network's linear readout, coloured by the current bracket's type.
 
-![Typed opens](figures/example_open.png)
+![Hidden opens](figures/example_simplex_hidden.png)
+
+![Typed opens](figures/example_simplex_open.png)
+
+The same data as rows of shaded cells, with the type also read from the network's own close-token probabilities, is in `figures/example_hidden.png` and `figures/example_open.png`.
 
 ## Which processes to train on
 

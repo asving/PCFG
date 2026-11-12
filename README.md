@@ -195,6 +195,12 @@ The same patch applied to the algorithm after its evidence step gives `R` 0.75 a
 
 ![Figure 3](figures/fig3.png)
 
+**One sequence, belief by belief** (`python example.py RUN_HIDDEN RUN_OPEN`, written to `figures/example.html`). The two processes differ only in the open token, so both networks are shown the same sequence. Each column is a position; rows are the type posterior of the current bracket and the state belief under each type, exact and as read from the network. The sequence was picked from 6,000 samples for having brackets of different types opened inside one another; the networks are the 20,000-step `mess3` and `mess3+open` runs.
+
+![Hidden opens](figures/example_hidden.png)
+
+![Typed opens](figures/example_open.png)
+
 ## Which processes to train on
 
 A process is informative about a step when skipping that step is expensive, because then a network's loss shows whether the step is done. `design.py` prices every shortcut for every family (512 sequences each, no training). Excess loss in mnat/token; the pilot network reached 2.5, so differences of 5–10 are readable from a run of that size.
@@ -341,6 +347,7 @@ For Tom Quantum at β/α = 2.747 one layer is a real limit: three times the trai
 | `train.py` | training (`--process NAME`), with excess loss by position class at each eval |
 | `validate.py` | the six measurements |
 | `figures.py`, `export.sh` | figures from a trained run, as a self-contained HTML report and PNGs |
+| `example.py` | one sequence followed belief by belief, for a hidden-open and a typed-open network |
 | `flat.py` | one component alone on a flat sequence: is its belief readable from one layer |
 | `design.py` | shortcut prices across families |
 | `coupled.py` | coupled brackets: exactness check and the cost of limited reads |

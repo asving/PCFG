@@ -7,3 +7,4 @@ flat_*.log
 logs/
 
 figures/*/*.html
+figures/example_*.html

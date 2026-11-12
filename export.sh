@@ -8,7 +8,12 @@ shot() {  # name width height
     --screenshot="$PWD/$1.png" "file://$PWD/$1.html" > /dev/null 2>&1
   echo "$1.png $(sips -g pixelWidth -g pixelHeight "$1.png" 2>/dev/null | awk '/pixel/{printf "%s ", $2}')"
 }
-shot fig0_process 1196 520
-shot fig1 1196 900
-shot fig2 1196 830
-shot fig3 1196 1100
+if [ $# -ge 4 ]; then           # bash export.sh FOLDER NAME WIDTH HEIGHT [NAME WIDTH HEIGHT ...]
+  shift
+  while [ $# -ge 3 ]; do shot "$1" "$2" "$3"; shift 3; done
+else
+  shot fig0_process 1196 520
+  shot fig1 1196 900
+  shot fig2 1196 830
+  shot fig3 1196 1100
+fi

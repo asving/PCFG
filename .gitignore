@@ -6,3 +6,4 @@ figures/fig*.html
 flat_*.log
 logs/
 
+figures/*/*.html

@@ -231,9 +231,60 @@ Reading it by step:
 | + 2 reads down | 3.3 | 10.8 |
 | + 3 reads down | 0.9 | 3.2 |
 
-Each extra read costs a layer, so this is a ladder of loss floors that a sweep over depth could land on. At coupling 0.5 the ladder is too short to see (8.4, 0.9, 0.1). If the type is never revealed, every truncation costs under 10 mnat at 0.9 and under 3 at 0.5, and limiting the reads up costs under 1: not worth training.
+The prediction was that each extra read costs a layer, so that a sweep over depth would land on this ladder of loss floors. The overnight runs below refuted that for this coupling. At coupling 0.5 the ladder is too short to see (8.4, 0.9, 0.1). If the type is never revealed, every truncation costs under 10 mnat at 0.9 and under 3 at 0.5, and limiting the reads up costs under 1: not worth training.
 
 **Suggested order.** `tomq` (a different geometry and the longest gather), `clock3` (the thread clock), `mess3+open` (the control without type inference), then coupled brackets at 0.9 with revealed types over 3 to 6 layers. Whether each component's belief can be read from one block is checked in the next section.
+
+## Overnight runs (12 November)
+
+20,000 steps, batch 64, context 128, one network per row. Excess loss over Bayes in mnat/token. `python summary.py` prints one line per run from `runs/*.validate.txt`, which hold the six measurements for each.
+
+**Other families** (d = 128):
+
+| run | layers | all | new bracket with an earlier one at its depth | just read a close | 1–3 tokens after a long child | belief readout R², last block |
+|---|---|---|---|---|---|---|
+| `mess3`, seed 1 | 4 | 1.2 | 0.1 | 2.5 | 2.7 | 0.88 |
+| `clock3`, seed 0 | 4 | 1.8 | 0.1 | 4.9 | 3.6 | 0.89 |
+| `clock3`, seed 1 | 4 | 2.8 | 0.1 | 6.4 | 7.3 | 0.88 |
+| `mess3+open` | 4 | 0.8 | 0.2 | 2.4 | 1.5 | 0.92 |
+| `fern` | 4 | 4.6 | 0.1 | 10.2 | 11.9 | 0.75 |
+| `tomq`, seed 0 | 6 | 7.0 | 0.1 | 7.7 | 8.4 | 0.67 |
+| `tomq`, seed 1 | 6 | 4.7 | 0.1 | 5.9 | 6.4 | 0.72 |
+| `tomq` | 4 | 8.0 | 0.1 | 11.5 | 13.5 | 0.65 |
+| `tomq+open` | 6 | 4.0 | 0.2 | 5.6 | 5.6 | 0.82 |
+
+- **Brackets are kept apart in every family.** In new brackets that have an earlier one at the same depth the excess is 0.1–0.2, where a depth tag alone would cost 140–250. Changing tokens outside the current bracket moves predictions by at most 0.1 mnat in every d = 128 run.
+- **The clock networks count in thread tokens.** After a long child they are at 3.6 and 7.3; counting in positions would cost 31.
+- **Per-type subspaces are clearer here than in the pilot.** One block before the last, the overlap between two types' planes is 0.07–0.12 in `clock3` and 0.00–0.12 in `tomq` (chance 0.02), and the same type's plane at shallow and deep positions overlaps 0.96–0.99. After the last block the `clock3` planes have partly merged (0.43–0.44).
+- **Patching matches the algorithm's own split.** After a close, the share of the effect carried by the parent's earlier tokens and by the last position before the child is 0.79 / 0.22 in `fern` (algorithm 0.79 / 0.22), 0.79 / 0.18 in `mess3` (0.75 / 0.29), 0.58 / 0.25 in `clock3` (0.73 / 0.32), 0.66–0.72 / 0.21–0.30 in `tomq` (0.82 / 0.18), and nothing passes through anything else.
+- **Tom Quantum is the hardest.** Six layers beat four after a close (8.4 against 13.5 after a long child) but the networks are still 5–7 mnat from Bayes, worst in the root (7–11 at depth 0), and the belief reads only 0.65–0.72 from the last block.
+- **The type-at-open control is confounded by the root.** The root's type is still hidden, and the per-token evidence is still readable in `mess3+open` (0.84).
+
+**Width sweep** (`mess3`, 4 layers, two seeds). A full depth-8 stack of beliefs is 81 numbers.
+
+| d | all | by depth 0, 3, 6 (seed 0) | by depth 0, 3, 6 (seed 1) | largest leak |
+|---|---|---|---|---|
+| 128 | 1.2 | – | 1.1, 1.3, 1.7 | 0.0 |
+| 64 | 2.3, 2.2 | 1.9, 3.0, 3.7 | 1.8, 2.5, 3.4 | 0.2 |
+| 32 | 4.5, 5.0 | 3.6, 5.6, 6.6 | 3.8, 5.8, 8.2 | 0.3 |
+| 16 | 9.5, 10.0 | 6.2, 9.7, 20.0 | 6.8, 10.7, 18.0 | 0.6 |
+
+At d = 32, less than half of what a full stack needs, the network is within 4–8 mnat of Bayes at every depth, where forgetting the parent costs 19 overall and 73 just after a close. The loss does rise with depth as width shrinks: by a factor of two at d = 32 and three at d = 16. `clock3` at d = 32 is much worse (14.5 overall, 33 after a long child).
+
+**Coupled brackets** (child shares its parent's type with probability 0.9; `coupled_train.py`):
+
+| | all | new bracket at depth ≥ 2 | just read a close |
+|---|---|---|---|
+| observer with 0 reads of the parent | 38.9 | 79.7 | 8.0 |
+| 1 read | 11.9 | 37.1 | 2.3 |
+| 2 reads | 3.6 | 11.0 | 0.7 |
+| 3 reads | 1.1 | 3.3 | 0.2 |
+| network, 2 layers | 2.6 | 3.3 | 5.2 |
+| network, 3 layers | 2.0 | 2.4 | 3.9 |
+| network, 4 layers | 1.4 | 1.7 | 2.8 |
+| network, 6 layers | 0.8 | 0.9 | 1.8 |
+
+The prediction that loss would step down a ladder as layers allow more chained reads is wrong here. A two-layer network is already below the two-read floor, and in new brackets at depth ≥ 2 it is at 3.3 where two reads give 11.0. The likely reason, not yet tested: with this coupling a type is either copied from the parent or redrawn, so the evidence of all enclosing brackets about a shared type simply adds, and one gather over the enclosing brackets' tokens replaces the chain. A coupling whose steps do not commute would be needed to test the layer cost.
 
 ## Is each component's belief readable from one block?
 

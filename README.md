@@ -306,6 +306,19 @@ At d = 32, less than half of what a full stack needs, the network is within 4–
 
 The prediction that loss would step down a ladder as layers allow more chained reads is wrong here. A two-layer network is already below the two-read floor, and in new brackets at depth ≥ 2 it is at 3.3 where two reads give 11.0. The likely reason, not yet tested: with this coupling a type is either copied from the parent or redrawn, so the evidence of all enclosing brackets about a shared type simply adds, and one gather over the enclosing brackets' tokens replaces the chain. A coupling whose steps do not commute would be needed to test the layer cost.
 
+Tested on 12 November (`coupled_gather.py`, same evaluation set). The chain of reads is a filter run along the path from the root: the hidden chain is the types of the enclosing brackets, and each bracket's evidence is one soft observation. Flat belief updating is the same kind of chain and transformers do not spend a layer per token on it, so the question is whether one gather can stand in for this chain too. An observer that never chains, and instead adds up the evidence of all enclosing brackets with weight γ^(levels up − 1) before applying the coupling once:
+
+| observer | all | new bracket, depth ≥ 2 | just read a close |
+|---|---|---|---|
+| 2 chained reads | 3.56 | 11.04 | 0.67 |
+| 3 chained reads | 1.09 | 3.28 | 0.23 |
+| one gather, γ = 0.3 | 3.00 | 9.06 | 0.65 |
+| one gather, γ = 0.5 | 1.71 | 5.14 | 0.48 |
+| one gather, γ = 0.7 | 2.75 | 8.43 | 0.77 |
+| one gather, γ = 1 (all enclosing brackets share one type) | 6.42 | 19.72 | 1.55 |
+
+A single weighted gather lands between two and three chained reads. The networks do better still where the chain matters most (new brackets at depth ≥ 2: 3.3, 2.4, 1.7, 0.9 at 2, 3, 4, 6 layers), so they are not limited to one weighted sum; gathering several enclosing brackets separately and combining them would do it. Either way the chain is being done at once and not one level per layer.
+
 ## Is each component's belief readable from one block?
 
 The probes above read a belief from one block's output. That only makes sense for components whose belief is linearly readable from a single block of a trained network, which is known to fail for RRXOR (Shai et al., arXiv 2405.15943). `flat.py` trains a network on one component alone, on flat sequences with no brackets, and reads the belief from each block. d = 64, 4 heads, context 32, one seed each.

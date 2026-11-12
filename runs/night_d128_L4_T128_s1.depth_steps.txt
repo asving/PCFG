@@ -1,0 +1,18 @@
+runs/night_d128_L4_T128_s1: mess3, 4 layers; probes fitted on 1125 sequences that stay within depth 8, applied unchanged to 2000 that go deeper
+R^2 by depth of the position (around the mean of the tested positions at that depth); depths above 8 were never shown
+
+                                   block  in range      0      1      2      3      4      5      6      7      8      9     10     11     12     13
+1 depth                                2     0.995                                                                                                  
+2 tag: distance back to own '#'        3     0.902    nan   0.87   0.90   0.89   0.89   0.86   0.84   0.80   0.42  -0.40  -0.21  -1.43  -3.32  -5.28
+   constant re-estimated per depth                    nan   0.87   0.90   0.89   0.89   0.87   0.85   0.81   0.59   0.16  -0.20  -0.87  -0.86  -0.90
+3 index: own tokens read               4     0.925   0.93   0.43   0.60   0.56   0.61   0.58   0.54   0.42   0.22  -0.31  -0.67  -1.98  -2.76  -2.25
+   constant re-estimated per depth                   0.93   0.52   0.60   0.57   0.61   0.58   0.55   0.42   0.22  -0.27  -0.63  -1.56  -1.82  -1.24
+4 state belief per type                4     0.946   0.95   0.95   0.95   0.95   0.94   0.94   0.93   0.92   0.89   0.76   0.61   0.58   0.54   0.50
+   constant re-estimated per depth                   0.95   0.95   0.95   0.95   0.95   0.94   0.93   0.92   0.89   0.85   0.80   0.78   0.77   0.74
+6 type log-posterior                   4     0.886   0.87   0.82   0.82   0.81   0.83   0.80   0.82   0.77   0.39  -0.92  -2.69  -5.58  -7.31 -13.64
+   constant re-estimated per depth                   0.87   0.83   0.82   0.82   0.83   0.80   0.82   0.82   0.44   0.22   0.08  -0.16  -0.10  -0.53
+
+depth as read by the probe (block 2), by true depth:
+true depth                                              0      1      2      3      4      5      6      7      8      9     10     11     12     13
+mean readout                                         0.01   1.01   1.97   2.93   3.98   5.05   6.02   6.93   7.80   8.59   9.26   9.86  10.33  10.75
+spread (sd)                                          0.09   0.09   0.10   0.11   0.15   0.22   0.32   0.42   0.48   0.52   0.54   0.54   0.53   0.50

@@ -1,0 +1,32 @@
+runs/clock3_night_d128_L4_T128_s1: clock3, 4 layers, d = 128, trained 20000 steps with depth capped at 8
+deepest depth in any training sequence: 8
+training positions by depth: 0: 54,492,816, 1: 38,342,287, 2: 25,864,805, 3: 17,118,266, 4: 11,121,205, 5: 7,134,848, 6: 4,579,017, 7: 3,017,511, 8: 2,169,245
+
+test: 60000 sequences from the same process with the cap lifted; 4355 go deeper than 8 (7.3%). Scored: 4355 that do, and 3000 that do not, for comparison.
+
+=== A. EXCESS LOSS WITHIN TOKEN CLASS, by depth of the predicting position (mnat/token); depths above 8 were never shown
+                                         0       1       2       3       4       5       6       7       8       9      10      11      12      13      14      15
+positions tested                     76763   53882   46069   44661   44895   47442   50122   52690   53270   40124   22314   12064    6530    3408    1615     753
+training positions, millions         54.49   38.34   25.86   17.12   11.12    7.13    4.58    3.02    2.17    0.00    0.00    0.00    0.00    0.00    0.00    0.00
+THE NETWORK                            1.9     1.5     1.7     2.2     2.4     3.0     3.4     3.9    13.4    28.0    52.3    61.7    64.4    68.2    61.7    67.3
+  sequences that stay within cap       3.2     2.3     2.2     2.4     2.7     2.1     2.3     1.7     0.9     nan     nan     nan     nan     nan     nan     nan
+no bracket tag (depth only)            0.0    56.5    42.2    41.8    40.7    39.1    46.5    45.6    45.4    37.1    34.5    31.0    25.8    31.0    25.6    41.9
+no reset at an open                    0.0   288.3   327.5   362.5   387.0   412.9   434.0   467.5   496.4   514.5   518.1   493.8   512.2   481.3   486.9   452.2
+forgets the parent at a close         23.6    16.4    17.9    18.9    20.0    21.6    24.0    25.0    24.2    16.4    16.2    14.7    16.0    13.5    12.4    12.2
+no inference at all                   92.7    76.2    77.7    77.0    79.1    82.8    84.1    83.4    83.0    73.5    74.4    74.3    71.2    71.9    64.0    68.2
+the network, total excess              2.0     1.6     1.8     2.2     2.5     3.1     3.5     4.0   345.2   464.8   473.9   467.5   458.9   456.8   445.5   447.2
+
+=== B. THE NETWORK BY WHAT THE POSITION HAS TO DO (within class, mnat/token)
+                                         0       1       2       3       4       5       6       7       8       9      10      11      12      13      14      15
+new bracket, <= 2 own tokens           0.1     0.1     0.1     0.1     0.2     0.3     0.3     0.4     2.5     6.4    12.0    11.9    12.1    12.2    12.6    13.8
+in a bracket, >= 3 own tokens          2.0     2.4     2.8     3.4     3.8     4.5     4.9     5.5    17.7    42.0    84.5   104.5   109.1   120.4   111.7   131.8
+just read a close (resume parent)      5.3     3.1     3.8     5.2     5.4     6.4     8.3     8.7    34.0    64.8    76.3    74.4    81.2    73.9    62.7    54.7
+
+=== C. DOES GOING DEEPER DAMAGE THE BRACKETS AROUND IT?  (the network, within class, at depths <= 8)
+                                         0       1       2       3       4       5       6       7       8
+before first going deeper              1.9     1.4     1.5     1.7     1.8     1.9     1.9     1.8     1.0
+after having been deeper               7.8     5.0     6.9     9.3     8.4     9.1     8.6     8.2    25.4
+
+summary: depths 9, 10, 11 (never shown) 28.0, 52.3, 61.7 mnat
+  against depths 7-8 on the same sequences, 8.7: 3.2x, 6.0x, 7.1x   (the baseline fixed before the test; it includes positions that have come back from an unseen depth)
+  against depths 7-8 before the sequence first goes deeper, 1.4: 20x, 37x, 43x

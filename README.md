@@ -394,6 +394,45 @@ Measurement 6 shows that changing an enclosing bracket's tokens does not change 
 - With the patching result (after a close, the parent's information is read from the parent's own token positions and the last own position before the child, nothing through the child), the parent's belief is rebuilt at the close.
 - Limit: these are linear probes.
 
+## Depth beyond training
+
+Has the network learned a rule that does not care how deep it is, or the depths it saw? Every run capped the depth at 8. `depth_ood.py` replays a run's own training sampler to count what it was shown (depth 8 at 2.2 million positions of 164 million; nothing deeper), then tests the network on the same process with the cap lifted, on the 7.3% of sequences that go past depth 8.
+
+The score is the excess loss within token class: the content token given that the next token is content, plus the close type given that it is a close. This leaves out the split between open, close and content, which training fixed per depth (at the cap it taught that opens never happen) and never taught beyond.
+
+Excess loss within class, mnat/token, by depth of the predicting position (`runs/NAME.depth.txt`):
+
+| network | depths 0–7 | 9 | 10 | 11 | 12 | no inference at all, depth 9 |
+|---|---|---|---|---|---|---|
+| Mess3, d = 128, seed 1 | 0.6–2.1 | 18.1 | 32.6 | 38.9 | 45.8 | 60.5 |
+| Mess3, d = 64, seed 0 | 1.0–4.5 | 26.5 | 42.3 | 50.7 | 59.4 | 60.5 |
+| clock, seed 0 | 1.0–2.5 | 21.4 | 36.1 | 46.8 | 51.5 | 73.5 |
+| clock, seed 1 | 1.5–3.9 | 28.0 | 52.3 | 61.7 | 64.4 | 73.5 |
+| Tom Quantum, 6 layers, seed 1 | 2.4–4.8 | 25.3 | 32.2 | 45.0 | 53.9 | 92.2 |
+| fern, seed 0 | 2.6–6.4 | 13.3 | 19.9 | 20.7 | 20.2 | 23.5 |
+
+- No network holds its accuracy past the cap. One level beyond, the loss is 5 to 23 times what it is at depths 7 and 8 on positions that have not yet been deeper, and it climbs towards the cost of doing no inference at all.
+- Going deeper also damages the brackets around it. For Mess3, positions at depth 8 score 0.6 mnat before the sequence first exceeds the cap and 15.6 after; at depths 0 to 7, 0.5–1.0 before and 2.8–4.4 after.
+- New brackets suffer least (Mess3 at depth 9: 6.3 mnat with at most two own tokens, 22.4 with three or more, 63.2 just after a close).
+
+**Predictions, made before the test.** Asvin: "I think OOD depth should pass fine given our understanding of the circuit but we should test it!" Claude (this session): about 60/40 that it fails, with the loss at unseen depths more than 10 times the loss at the deepest seen ones, because the bracket tag is found by comparing depths and the depth features would not extend; a pass would be within 3 times. Against the baseline fixed in advance (depths 7–8 on the same sequences), the ratios at depths 9 to 11 are 3.2–8.2 for Mess3 and clock, 2.5–4.4 for Tom Quantum and 1.7–2.6 for fern. So by the letter fern passes and the others land between the two lines. The baseline was badly chosen: it includes positions that had come back from an unseen depth, which are themselves damaged. Against positions not yet affected the ratios are 14–50 (Mess3), 19–43 (clock), 11–20 (Tom Quantum) and 5–8 (fern), and fern at depth 10 is at 19.9 mnat where no inference costs 23.6.
+
+**Which step breaks.** `depth_steps.py` fits each probe on sequences that stay within the cap and applies it unchanged to sequences that go deeper. Mess3 (`runs/NAME.depth_steps.txt` has the other families, which look the same):
+
+| read at depth | 6 | 7 | 8 | 9 | 10 | 11 |
+|---|---|---|---|---|---|---|
+| depth, mean readout | 6.02 | 6.93 | 7.80 | 8.59 | 9.26 | 9.86 |
+| depth, spread of the readout | 0.32 | 0.42 | 0.48 | 0.52 | 0.54 | 0.54 |
+| bracket tag (distance back to own `#`), R² | 0.85 | 0.81 | 0.59 | 0.16 | −0.20 | −0.87 |
+| type log-posterior, R² | 0.82 | 0.82 | 0.44 | 0.22 | 0.08 | −0.16 |
+| state belief per type, R² | 0.93 | 0.92 | 0.89 | 0.85 | 0.80 | 0.78 |
+
+R² here lets the probe's constant be re-estimated at each depth, so a plain shift does not count as failure. The depth count keeps rising along the same direction past the cap, but by 0.5–0.8 per level where its spread is 0.5, so neighbouring depths overlap. The bracket tag, which needs depths compared, fails at once, and the type posterior with it; the state belief degrades slowly. My reading, not tested causally: the network has not stored each depth separately, but its depth count has the resolution it needed in training and no more, and the tag is the first thing to depend on that resolution.
+
+Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.14 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.2–0.5 at depths 6 to 8).
+
+**Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).
+
 ## Not yet done
 
 - More seeds. The pilot is one.
@@ -402,7 +441,7 @@ Measurement 6 shows that changing an enclosing bracket's tokens does not change 
 - Fewer and more layers. The algorithm suggests about four attention steps.
 - A hand-built transformer that implements the seven steps.
 - Causal tests of the tag: overwrite one bracket's tag with another's and check that the readers switch threads. Head ablations by step. Whether the type readout equals the sum of the per-token evidence readouts.
-- Depths beyond those seen in training.
+- Context length beyond 128, which needs a network trained with a position scheme that extends. A wider range of training depths, to see whether the depth count then extends further.
 - Coupled brackets in `train.py` and `validate.py`; `coupled.py` is a standalone study.
 
 ## Files

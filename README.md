@@ -461,6 +461,31 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 - A limit of this way of giving depth: the learned vector is large (2.2 per level, against token and position embeddings of norm 10 to 12), so the depth term is 60% of the squared norm of the input at depth 8, 66% at depth 9 and 77% at depth 12. Layer norm then shrinks everything else in the input at unseen depths. That alone could cause part of the failure; this run does not separate it from a failure to compare unseen depths.
 - Prediction (Claude, before the result): better than before at depths 9 to 11 but not a pass. Not a pass was right; better was wrong except at depth 9.
 
+**How the network compares depths: depth is an angle.** Finding a position's own `#` (step 2) is an equality test between two depths, with ties broken by recency: the most recent open whose depth equals mine. An attention score is bilinear in query and key, and equality of two integers is not, unless depth is written in a code where equality is a dot product. `depth_code.py` and `depth_alias.py` show which code the networks use. The mean residual at each trained depth lies in about two dimensions (participation ratio 2.1–2.4 after blocks 2 and 3; two directions hold 90–95% of the variance), and in that plane the depths sit around a circle. Angle of each depth's mean, in degrees, one block before the last:
+
+| depth | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Mess3 | 0 | 49 | 88 | 125 | 162 | 202 | 244 | 286 | 323 | 339 | 341 | 340 | 339 |
+| Mess3 with the depth input | 0 | 49 | 90 | 128 | 164 | 202 | 239 | 279 | 325 | 345 | 356 | 359 | 360 |
+| clock | 0 | 51 | 93 | 130 | 170 | 211 | 253 | 295 | 334 | 349 | 352 | 353 | 353 |
+| Tom Quantum (block 5 of 6) | 0 | 54 | 96 | 136 | 177 | 219 | 260 | 304 | 348 | 369 | 370 | 369 | 368 |
+
+- Each level turns the code by about 40 degrees, so the nine trained depths use up the circle. Two depths are equal when their angles agree, which a dot product can test.
+- The depths never shown all land at one angle, 15 to 25 degrees past depth 8. The network has one code for "deeper than 8".
+- The heads that read a position's own bracket then lose it. Share of their attention, Mess3 (the other three networks are within 0.1 of these):
+
+| depth of the reading position | 4–7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|
+| own bracket | 0.87–0.89 | 0.73 | 0.59 | 0.44 | 0.36 | 0.29 |
+| positions at depth 8 outside the own bracket | 0.00–0.02 | 0.03 | 0.18 | 0.09 | 0.06 | 0.05 |
+| other brackets at depths above 8 | 0.00 | 0.07 | 0.11 | 0.38 | 0.49 | 0.56 |
+| the root | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.01 |
+
+- At depth 9 the leak goes to the enclosing depth-8 bracket, whose angle is closest. Deeper, it goes to the other brackets at unseen depths, which share the position's code. Past the cap the network behaves as if it had a single depth tag for everything deeper than 8.
+- This is also why handing the network an exact linear depth did not help: that network turns the linear depth into the same angle code within two blocks, and the code is full.
+- After the last block the plane holds three clusters instead: depth 0, depths 1 to 7, and depth 8 together with every unseen depth. Those are the three cases of the open and close probabilities (the root cannot close, the cap cannot open).
+- I predicted, from the angles, attention leaking to depth 8 or to the root. Depth 8 was right at depth 9 only; the root was wrong.
+
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).

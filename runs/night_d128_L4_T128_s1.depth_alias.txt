@@ -1,0 +1,17 @@
+runs/night_d128_L4_T128_s1: mess3, 4 layers; 1500 sequences that go deeper than 8; positions 64-127
+
+ANGLE of each depth's mean residual in the plane of the two leading directions of the trained depths' means (degrees)
+                0      1      2      3      4      5      6      7      8      9     10     11     12    step per level, trained depths
+block 1         0     14     31     62    132    172    190    200    208    213    215    216    218    26 (from 8 to 70)
+block 2         0     37     72    104    139    178    217    250    275    288    294    298    299    34 (from 25 to 39)
+block 3         0     49     88    125    162    202    244    286    323    339    341    340    339    40 (from 36 to 49)
+block 4         0    143    143    145    146    146    146    145    292    293    294    294    295    37 (from -1 to 147)
+
+READER HEADS (more than half of their attention on the own bracket at depths 5-7): block 2 head 3, block 3 head 0, block 3 head 2, block 3 head 3, block 4 head 0, block 4 head 1, block 4 head 2, block 4 head 3
+share of attention, mean over those heads, by depth of the reading position
+                            4      5      6      7      8      9     10     11     12
+own bracket              0.89   0.89   0.88   0.87   0.73   0.59   0.44   0.36   0.29
+depth 0 (root)           0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.01   0.01
+depth 8                  0.00   0.00   0.00   0.02   0.03   0.18   0.09   0.06   0.05
+other, depth > 8         0.00   0.00   0.00   0.00   0.07   0.11   0.38   0.49   0.56
+other, depth 1-7         0.11   0.11   0.11   0.10   0.17   0.12   0.09   0.09   0.08

@@ -1,0 +1,19 @@
+runs/tomq_night_d128_L6_T128_s1: tomq, 6 layers; 1500 sequences that go deeper than 8; positions 64-127
+
+ANGLE of each depth's mean residual in the plane of the two leading directions of the trained depths' means (degrees)
+                0      1      2      3      4      5      6      7      8      9     10     11     12    step per level, trained depths
+block 1         0     54     60     80     96    189    207    211    217    211    211    210    209    27 (from 4 to 93)
+block 2         0     30     65    105    143    175    202    226    242    252    257    260    262    30 (from 16 to 40)
+block 3         0     35     70    104    139    177    213    248    280    298    305    307    307    35 (from 32 to 38)
+block 4         0     46     84    122    163    204    245    285    322    346    348    347    345    40 (from 38 to 46)
+block 5        -0     54     96    136    177    219    260    304    348    369    370    369    368    44 (from 40 to 54)
+block 6         0    143    139    141    141    145    148    154    286    288    291    292    293    36 (from -4 to 143)
+
+READER HEADS (more than half of their attention on the own bracket at depths 5-7): block 3 head 0, block 3 head 1, block 3 head 3, block 4 head 2, block 4 head 3, block 5 head 0, block 5 head 1, block 5 head 3, block 6 head 0, block 6 head 1, block 6 head 2
+share of attention, mean over those heads, by depth of the reading position
+                            4      5      6      7      8      9     10     11     12
+own bracket              0.86   0.85   0.84   0.83   0.77   0.66   0.56   0.46   0.37
+depth 0 (root)           0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00
+depth 8                  0.00   0.00   0.01   0.05   0.03   0.15   0.06   0.03   0.02
+other, depth > 8         0.00   0.00   0.00   0.01   0.10   0.16   0.37   0.50   0.60
+other, depth 1-7         0.14   0.15   0.15   0.11   0.09   0.02   0.01   0.00   0.00

@@ -1,0 +1,17 @@
+runs/clock3_night_d128_L4_T128_s0: clock3, 4 layers; 1500 sequences that go deeper than 8; positions 64-127
+
+ANGLE of each depth's mean residual in the plane of the two leading directions of the trained depths' means (degrees)
+                0      1      2      3      4      5      6      7      8      9     10     11     12    step per level, trained depths
+block 1         0     23     57    101    140    173    200    220    232    240    244    246    248    29 (from 12 to 44)
+block 2         0     39     74    107    142    180    221    260    290    305    312    315    317    36 (from 31 to 40)
+block 3        -0     51     93    130    170    211    253    295    334    349    352    353    353    42 (from 37 to 51)
+block 4         0    145    144    145    145    147    146    148    290    293    296    297    298    36 (from -0 to 145)
+
+READER HEADS (more than half of their attention on the own bracket at depths 5-7): block 2 head 1, block 2 head 2, block 3 head 0, block 3 head 1, block 3 head 2, block 3 head 3, block 4 head 0, block 4 head 1, block 4 head 2, block 4 head 3
+share of attention, mean over those heads, by depth of the reading position
+                            4      5      6      7      8      9     10     11     12
+own bracket              0.85   0.85   0.84   0.84   0.81   0.65   0.52   0.45   0.39
+depth 0 (root)           0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00   0.00
+depth 8                  0.00   0.00   0.00   0.07   0.04   0.21   0.07   0.04   0.03
+other, depth > 8         0.00   0.00   0.00   0.00   0.10   0.14   0.41   0.51   0.59
+other, depth 1-7         0.15   0.15   0.16   0.09   0.05   0.01   0.00   0.00   0.00

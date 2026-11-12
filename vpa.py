@@ -13,6 +13,10 @@ Exact prediction then needs two recursions (coupled.py has the slow reference an
          likelihood of everything inside the child under each of its types, and "everything" includes what
          the child's own children told it
 
+A process can also have several KINDS of open token, each with its own coupling matrix: PI[kind][parent's
+type]. The kind is visible; the type stays hidden. With near-deterministic couplings a bracket's likely type is
+then its ancestor's type relabelled by the kinds on the path between them, in order.
+
 filter() returns the exact next-token law, the laws of observers that cut either recursion short, and the
 quantities a probe can look for. CONFIGS holds the processes chosen by design_coupled.py.
 
@@ -26,6 +30,8 @@ INF = 99
 K3 = 3
 I3, U3 = np.eye(K3), np.full((K3, K3), 1 / K3)
 SHIFT = np.roll(I3, 1, axis=1)                               # child type = parent type + 1 (mod 3)
+SWAP = I3[[1, 0, 2]]                                          # child type = parent type with 0 and 1 exchanged
+noisy = lambda P, rho: rho * P + (1 - rho) * U3
 PARAMS = [(0.05, 0.85), (0.15, 0.6), (0.45, 0.85)]
 
 
@@ -44,6 +50,12 @@ CONFIGS = {
     # weaker coupling and stronger token bias: here the shortcut of taking the coupling as exact is also expensive
     "vpa_shift2": dict(components=lambda: [biased(x, a, k, 0.7) for k, (x, a) in enumerate(PARAMS)],
                        PI=0.90 * SHIFT + 0.10 * U3, p_open=0.35, p_close=0.36, max_depth=8),
+    # two kinds of open token whose relabellings do not commute: '(' adds one to the type, '[' exchanges 0 and 1
+    "vpa_s3": dict(components=lambda: [biased(x, a, k, 0.5) for k, (x, a) in enumerate(PARAMS)],
+                   PI=np.stack([noisy(SHIFT, 0.95), noisy(SWAP, 0.95)]), p_open=0.35, p_close=0.36, max_depth=8),
+    # the control: two kinds that commute, '(' adds one and '[' adds two
+    "vpa_c3": dict(components=lambda: [biased(x, a, k, 0.5) for k, (x, a) in enumerate(PARAMS)],
+                   PI=np.stack([noisy(SHIFT, 0.95), noisy(SHIFT @ SHIFT, 0.95)]), p_open=0.35, p_close=0.36, max_depth=8),
     # a noisy 3-cycle with unequal noise: no symmetry between the types
     "vpa_cycle": dict(components=lambda: [biased(x, a, k, 0.5) for k, (x, a) in enumerate(PARAMS)],
                       PI=np.array([[0.03, 0.95, 0.02], [0.05, 0.10, 0.85], [0.90, 0.04, 0.06]]),
@@ -61,19 +73,24 @@ def rigid(config):
     type and its depth. Its exact law is the prediction of an observer that needs no bracket structure beyond
     depth, the simplest shortcut for a strongly coupled process."""
     c = CONFIGS[config]
-    hard = np.eye(len(c["PI"]))[np.asarray(c["PI"]).argmax(-1)]
-    return VPA(c["components"](), 0.999 * hard + 0.001 / len(hard), c["p_open"], c["p_close"], c["max_depth"], name=config + "_rigid")
+    PI = np.asarray(c["PI"])
+    hard = np.eye(PI.shape[-1])[PI.argmax(-1)]
+    return VPA(c["components"](), 0.999 * hard + 0.001 / PI.shape[-1], c["p_open"], c["p_close"], c["max_depth"], name=config + "_rigid")
 
 
 class VPA(BracketProcess):
     def __init__(self, components, PI, p_open, p_close, max_depth=8, name=""):
         super().__init__(components, p_open=p_open, p_close=p_close, max_depth=max_depth, name=name)
-        self.PI = np.asarray(PI, dtype=float)                 # [parent type, child type]
-        self.cumPI = self.PI.cumsum(-1)
+        PI = np.asarray(PI, dtype=float)
+        self.PIs = PI if PI.ndim == 3 else PI[None]           # [kind of open, parent type, child type]
+        self.PI = self.PIs[0]
+        self.cumPIs = self.PIs.cumsum(-1)
+        self.n_open = len(self.PIs)                           # kinds of open token, all equally likely
+        self.CLOSE0 = self.OPEN0 + self.n_open
         self.hidden_close = True
-        self.VOCAB = self.CLOSE0 + 1                          # content tokens, '#', one close
+        self.VOCAB = self.CLOSE0 + 1                          # content tokens, the open kinds, one close
         self.BOS = self.VOCAB
-        self.syms = "ABCDEFGH"[:self.C] + "#)"
+        self.syms = "ABCDEFGH"[:self.C] + ("#" if self.n_open == 1 else "([{<"[:self.n_open]) + ")"
 
     def sample(self, batch, length, rng):
         K, D, S, C = self.K, self.D, self.S, self.C
@@ -96,8 +113,9 @@ class VPA(BracketProcess):
             tok = (rng.random(batch)[:, None] > probs.cumsum(-1)).sum(-1).clip(0, C - 1)
             new = np.einsum("bs,bsr->br", e, self.T[k, tok])
             new /= (new * self.r[k]).sum(-1, keepdims=True)
-            newk = (rng.random(batch)[:, None] > self.cumPI[k]).sum(-1).clip(0, K - 1)
-            toks[:, t] = np.where(emt, tok, np.where(opn, self.OPEN0, self.CLOSE0))
+            kind = rng.integers(0, self.n_open, batch)
+            newk = (rng.random(batch)[:, None] > self.cumPIs[kind, k]).sum(-1).clip(0, K - 1)
+            toks[:, t] = np.where(emt, tok, np.where(opn, self.OPEN0 + kind, self.CLOSE0))
             eta[rows, depth] = np.where(emt[:, None], new, e)
             depth = depth + opn - cls
             typ[rows[opn], depth[opn]] = newk[opn]
@@ -122,6 +140,7 @@ class VPA(BracketProcess):
         msg = np.zeros((B, D + 1, nU, K))
         prior_h = np.full((B, D + 1, nH, K), 1.0 / K)         # down limit h, up complete
         prior_u = np.full((B, D + 1, nU, K), 1.0 / K)         # up limit u, down complete
+        kinds = np.zeros((B, D + 1), dtype=np.int64)          # the kind of open that started each open bracket
         depth, rows = np.zeros(B, dtype=np.int64), np.arange(B)
         names = ["exact", "ignore", "prior"] + [("down", h) for h in downs] + [("up", u) for u in ups]
         preds = {n: np.zeros((B, L, self.VOCAB)) for n in names}
@@ -149,7 +168,7 @@ class VPA(BracketProcess):
                 preds[n][:, t, :C] = (1 - po - pc)[:, None] * np.einsum("bk,bkx->bx", w, emit_k)
             preds["prior"][:, t, :C] = (1 - po - pc)[:, None] * flat_emit
             for n in names:
-                preds[n][:, t, self.OPEN0] = po
+                preds[n][:, t, self.OPEN0:self.CLOSE0] = (po / self.n_open)[:, None]
                 preds[n][:, t, self.CLOSE0] = pc
             ref["depth"][:, t], ref["prior"][:, t], ref["ll"][:, t], ref["msg"][:, t] = depth, ph[:, -1], l, m[:, -1]
             ref["w"][:, t], ref["state"][:, t], ref["close_msg"][:, t] = ws["exact"], top, pending
@@ -164,44 +183,91 @@ class VPA(BracketProcess):
                 v[rows[emt], depth[emt]] = new / mass[..., None]
             if cls.any():                                     # the child at depth d tells its parent at d - 1
                 r, d = rows[cls], depth[cls]
+                PIc = self.PIs[kinds[r, d]]                   # the coupling of the bracket that is closing
                 for i in range(1, nU):                        # u = 0 learns nothing from a close
                     src = m[cls][:, -1] if i == nU - 1 else m[cls][:, i - 1]
                     tot = l[cls] + src
                     mx = tot.max(-1, keepdims=True)
-                    message = np.log(np.exp(tot - mx) @ self.PI.T) + mx
+                    message = np.log(np.einsum("bkj,bj->bk", PIc, np.exp(tot - mx))) + mx
                     msg[r, d - 1, i] += message
                     if i == nU - 1:
                         pending[cls] = message - message.mean(-1, keepdims=True)
             if opn.any():
                 r, d = rows[opn], depth[opn]
+                kinds[r, d + 1] = x[opn] - self.OPEN0
+                PIo = self.PIs[x[opn] - self.OPEN0]
                 for i in range(nH):
                     if i == 0:
                         child = np.full((opn.sum(), K), 1.0 / K)
                     else:
                         j = nH - 1 if i == nH - 1 else i - 1
-                        child = post(ph[opn][:, j], l[opn], m[opn][:, -1]) @ self.PI
+                        child = np.einsum("bk,bkj->bj", post(ph[opn][:, j], l[opn], m[opn][:, -1]), PIo)
                     prior_h[r, d + 1, i] = child
                 for i in range(nU):
-                    prior_u[r, d + 1, i] = post(pu[opn][:, i], l[opn], m[opn][:, i]) @ self.PI
+                    prior_u[r, d + 1, i] = np.einsum("bk,bkj->bj", post(pu[opn][:, i], l[opn], m[opn][:, i]), PIo)
                 v[r, d + 1], ll[r, d + 1], msg[r, d + 1] = self.eta0, 0.0, 0.0
             depth = depth + opn - cls
         return preds, ref
 
 
+def brute(proc, toks):
+    """Exact P(next content token | toks, next is content) by enumerating the type of every bracket."""
+    import itertools
+    parent, own, kind, stack = [-1], [[]], [0], [0]
+    for x in toks:
+        if proc.is_open(x):
+            parent.append(stack[-1]); own.append([]); kind.append(int(x - proc.OPEN0)); stack.append(len(parent) - 1)
+        elif proc.is_close(x):
+            stack.pop()
+        else:
+            own[stack[-1]].append(int(x))
+    active, F = stack[-1], len(parent)
+    fwd = np.zeros((F, proc.K, proc.S))
+    for f in range(F):
+        for k in range(proc.K):
+            v = proc.eta0[k].copy()
+            for x in own[f]:
+                v = v @ proc.T[k, x]
+            fwd[f, k] = v
+    num, den = np.zeros(proc.C), 0.0
+    for ks in itertools.product(range(proc.K), repeat=F):
+        w = 1.0
+        for f in range(F):
+            w *= 1 / proc.K if parent[f] < 0 else proc.PIs[kind[f], ks[parent[f]], ks[f]]
+            if f != active:
+                w *= fwd[f, ks[f]] @ proc.r[ks[f]]
+        v = fwd[active, ks[active]]
+        den += w * (v @ proc.r[ks[active]])
+        num += w * (v @ proc.emit[ks[active]].T)
+    return num / den
+
+
 if __name__ == "__main__":
     import algorithm
-    from coupled import Coupled, INF as CINF
     config = sys.argv[1] if len(sys.argv) > 1 else "vpa_shift"
     proc = make(config)
     toks, _ = proc.sample(1024, 128, np.random.default_rng(12345))
     preds, ref = proc.filter(toks)
-    slow = Coupled(CONFIGS[config]["components"](), proc.PI, False, p_open=proc.p_open, p_close=proc.p_close, max_depth=proc.D)
-    pairs = [("exact", (CINF, CINF)), ("ignore", (0, 0)), (("down", 1), (1, CINF)), (("down", 3), (3, CINF)), (("up", 1), (CINF, 1)), (("up", 2), (CINF, 2))]
-    worst = 0.0
-    for b in range(40):
-        s = slow.filter(toks[b], [o for _, o in pairs])
-        worst = max(worst, max(np.abs(preds[n][b] - s[o]).max() for n, o in pairs))
-    print(f"{config}: batched filter vs coupled.py on 40 sequences, six observers: max |difference| {worst:.1e}")
+    if proc.n_open == 1:
+        from coupled import Coupled, INF as CINF
+        slow = Coupled(CONFIGS[config]["components"](), proc.PI, False, p_open=proc.p_open, p_close=proc.p_close, max_depth=proc.D)
+        pairs = [("exact", (CINF, CINF)), ("ignore", (0, 0)), (("down", 1), (1, CINF)), (("down", 3), (3, CINF)), (("up", 1), (CINF, 1)), (("up", 2), (CINF, 2))]
+        worst = 0.0
+        for b in range(40):
+            s = slow.filter(toks[b], [o for _, o in pairs])
+            worst = max(worst, max(np.abs(preds[n][b] - s[o]).max() for n, o in pairs))
+        print(f"{config}: batched filter vs coupled.py on 40 sequences, six observers: max |difference| {worst:.1e}")
+    short = make(config, p_open=0.3, p_close=0.3, max_depth=4)
+    stoks, _ = short.sample(400, 14, np.random.default_rng(7))
+    sp = short.filter(stoks)[0]["exact"]
+    worst, n = 0.0, 0
+    for b in range(len(stoks)):
+        for t in (9, 13):
+            if short.is_open(stoks[b, :t]).sum() > 6:
+                continue
+            got = sp[b, t, :short.C] / sp[b, t, :short.C].sum()
+            worst, n = max(worst, np.abs(got - brute(short, stoks[b, :t])).max()), n + 1
+    print(f"{config}: exact filter vs brute-force enumeration of every bracket's type on {n} prefixes: max |difference| {worst:.1e}")
     st = algorithm.run(proc, toks)
     print(f"algorithm.py's structure on this process: depth agrees {bool((st['depth'] == ref['depth']).all())}; "
           f"own-token evidence agrees to {np.abs((st['logw'] - st['logw'].mean(-1, keepdims=True)) - (ref['ll'] - ref['ll'].mean(-1, keepdims=True))).max():.1e}; "

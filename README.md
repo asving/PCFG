@@ -697,6 +697,37 @@ What changes with layers is how the distant information travels. The same measur
 - So layers do not set how deep a nesting the network can process, but they set how it processes it. A shallow network adds relabelled evidence at once; a deeper one relays more of it level by level, and is more accurate for it. The extra blocks of a deeper network are split between structure (three blocks touch no content at six layers) and relays.
 
 
+**The second process, `vpa_shift2`**, where taking the coupling as exact is expensive (`runs/vpa_shift2_plain_d128_L<L>_T128_s0.validate.txt`). Excess loss, mnat/token, on 512 fresh sequences:
+
+| | all | depth ≥ 5 | new bracket, depth ≥ 3 | close of a bracket with children |
+|---|---|---|---|---|
+| coupling taken as exact | 16.3 | 30.1 | 28.0 | 9.9 |
+| 2 reads down | 7.3 | 13.1 | 18.3 | 3.1 |
+| 3 reads down | 3.0 | 6.8 | 7.6 | 1.2 |
+| 4 reads down | 1.2 | 3.6 | 3.1 | 0.3 |
+| all down, 1 level up | 2.5 | 2.6 | 2.3 | 8.2 |
+| 2 layers | 7.0 | 10.0 | 8.4 | 10.1 |
+| 4 layers | 2.2 | 2.9 | 2.4 | 4.1 |
+
+- Both networks beat the rigid shortcut by a wide margin (3 times at two layers, 10 times at four), so here they do use the tree.
+- The picture from the first process repeats. The 4-layer network is flat across nesting (1.4 to 2.5 mnat at depths 1 to 7) and below the four-reads observer at depth ≥ 5. The 2-layer network's loss climbs with depth (4.1 at depth 1, 10.1 at depth 5) and sits between two and three reads.
+- Direct reads matter less than on the first process, as expected when the at-once shortcut is worse. Removing direct reads of content 2+ levels up the path takes the 4-layer network 42% of the way to the one-read observer (58% on `vpa_shift`), and 21% for 3+ levels (55%). For the 2-layer network it is 80% and all.
+
+## Kinds of open bracket whose relabellings do not commute
+
+In `vpa_shift` there is one coupling, close to "add one to the type", so the translation of an ancestor's evidence into a bracket's own terms depends on depth difference alone, and the networks use exactly that (heads per depth class modulo 3). The general case lets the visible kind of open token choose the coupling, Π_kind. The translation between an ancestor and a bracket is then the composition of the relabellings of the kinds on the path between them, in order. `vpa.py` supports this (the exact filter matches brute-force enumeration of every bracket's type to 2e-14), with two processes that differ only in the algebra:
+
+- `vpa_s3`: `(` adds one to the type, `[` exchanges types 0 and 1. These do not commute: `(` then `[` sends type 0 to 0, `[` then `(` sends it to 2. Together they generate all six relabellings of three types.
+- `vpa_c3`, the control: `(` adds one, `[` adds two. These commute, so the translation is fixed by how many of each kind lie on the path.
+
+Components, coupling strength (0.95), rates and depth cap are those of `vpa_shift`, and so are the costs of cutting the recursions short (`runs/vpa_s3.design.txt`, `runs/vpa_c3.design.txt`: 15.6, 8.3, 4.3 mnat for one, two, three reads down in both). Only the difficulty of the relabelling differs. A chained computation handles both alike, one visible kind per level. An at-once computation needs each bracket's relabelling from the root: for the commuting pair a count along the path, for the other an ordered product.
+
+Predictions (Claude, written before any result; `queue_vpa3.sh`):
+1. The control behaves like `vpa_shift`: about 2 to 3 mnat at four layers, 7 to 9 at two.
+2. The non-commuting process is harder at every layer count: the 4-layer network at least 1.5 times its loss on the control (70%); the 2-layer network between the one-read and two-reads observers at depth ≥ 5, that is 16 to 25 mnat (60%).
+3. On the non-commuting process the loss grows with nesting depth more steeply than on the control at two and three layers (65%).
+4. Networks of four or more layers on the non-commuting process hold each bracket's relabelling from the root (one of six) in a linearly readable form, named correctly at more than 80% of positions after some block (60%).
+
 ## Not yet done
 
 - More seeds. The pilot is one.

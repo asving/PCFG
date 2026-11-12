@@ -1,4 +1,5 @@
 vpa_shift: batched filter vs coupled.py on 40 sequences, six observers: max |difference| 3.1e-16
+vpa_shift: exact filter vs brute-force enumeration of every bracket's type on 791 prefixes: max |difference| 2.4e-14
 algorithm.py's structure on this process: depth agrees True; own-token evidence agrees to 2.8e-14; per-type state to 0.0e+00
 
 1024 sequences of 128; exact Bayes 1.327 nats/token; content 0.38, opens 0.32, closes 0.30 of tokens

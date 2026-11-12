@@ -175,6 +175,33 @@ for name, Y, sel in targets:
     implied = r2(own_summary, Y, sel) if "evidence of" in name or "levels up" in name else float("nan")
     print(f"{name:38s}" + "".join(f"{v:7.2f}" for v in vals) + f"   {ctrl:7.2f}" + (f"   {implied:22.2f}" if implied == implied else ""))
 
+# the relabelling that carries the root's type to a bracket's likely type: the kinds of open on its path, composed in order
+hard = np.eye(K, dtype=np.int64)[proc.PIs.argmax(-1)].argmax(-1)      # [kind, parent type] -> the favoured child type
+frame_map = np.zeros((N, D + 1, K), dtype=np.int64)
+frame_map[:, 0] = np.arange(K)
+relabel = np.zeros((N, T, K), dtype=np.int64)
+for t in range(T):
+    o = is_open[:, t]
+    d = depth[o, t]
+    frame_map[rows[o], d] = hard[(xin[o, t] - proc.OPEN0)[:, None], frame_map[rows[o], d - 1]]
+    relabel[:, t] = frame_map[rows, depth[:, t]]
+code = (relabel * K ** np.arange(K)).sum(-1)
+classes = np.unique(code)
+onehot = (code[..., None] == classes).astype(float)
+print(f"\nthe bracket's relabelling from the root (one of {len(classes)}; chance = the commonest class): share of held-out positions at depth >= 2")
+print("where a linear readout names it correctly")
+sel = depth >= 2
+base = onehot[sel & test].mean(0).max()
+accs = []
+for l in range(L + 1):
+    X = resid[l].astype(float)
+    Xf, Yf = X[sel & ~test], onehot[sel & ~test]
+    mx, my = Xf.mean(0), Yf.mean(0)
+    W = np.linalg.solve((Xf - mx).T @ (Xf - mx) + 1e-4 * len(Xf) * np.eye(X.shape[-1]), (Xf - mx).T @ (Yf - my))
+    accs.append(((((X[sel & test] - mx) @ W + my).argmax(-1)) == onehot[sel & test].argmax(-1)).mean())
+print(f"{'':38s}" + "".join(f"{('emb' if l == 0 else f'blk{l}'):>7s}" for l in range(L + 1)) + "   chance")
+print(f"{'relabelling named correctly':38s}" + "".join(f"{v:7.2f}" for v in accs) + f"   {base:6.2f}")
+
 # --- 3. attention ----------------------------------------------------------------------------------------------
 names = [c for c, _ in cats] + ["BOS", "(own '#')", "(just before own '#')"]
 print(f"\n=== 3. ATTENTION  (share of each head's attention, reading positions at depth >= 3; the last two columns are single positions)")

@@ -1,0 +1,20 @@
+vpa_s3: exact filter vs brute-force enumeration of every bracket's type on 791 prefixes: max |difference| 2.4e-14
+algorithm.py's structure on this process: depth agrees True; own-token evidence agrees to 2.1e-14; per-type state to 0.0e+00
+
+1024 sequences of 128; exact Bayes 1.553 nats/token; content 0.38, opens 0.33, closes 0.29 of tokens
+share of positions by depth 0-8: 0.18 0.15 0.13 0.11 0.10 0.09 0.08 0.08 0.07
+
+excess loss over exact, mnat/token                     all          depth >= 3          depth >= 5   just read a close
+no inference at all                                   73.6                61.6                67.9                72.8
+neither recursion                                     36.7                43.0                45.4                38.0
+coupling taken as exact                                3.8                 6.0                 7.8                 3.0
+0 reads down, all up                                  29.2                36.2                39.0                19.8
+1 read down, all up                                   15.6                23.5                24.6                10.4
+2 reads down, all up                                   8.3                15.6                16.0                 5.2
+3 reads down, all up                                   4.3                 8.1                10.4                 2.6
+4 reads down, all up                                   2.2                 4.2                 6.9                 1.2
+5 reads down, all up                                   1.2                 2.2                 3.6                 0.5
+all down, 0 levels up                                  9.0                 9.8                10.8                12.4
+all down, 1 level up                                   3.3                 3.2                 3.3                 4.5
+all down, 2 levels up                                  1.2                 1.0                 0.8                 1.7
+all down, 3 levels up                                  0.4                 0.4                 0.2                 0.6

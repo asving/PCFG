@@ -499,6 +499,30 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 - Against my line fixed in advance (within 3 times the loss at depth 7–8 positions not yet affected, here 0.37 mnat), depth 9 passes at 2.6 times, and depths 10, 11 and 12 miss narrowly at 3.3, 3.6 and 4.8 times. For the plain network the same ratios are 23, 42, 50 and 58.
 - Given the tag, the network stops keeping an accurate depth. A linear probe reads depth with R² 0.80 where the plain network gives 0.995, and the angle code is gone (no regular step between depths). The price is the one rule that needs depth, that the cap cannot open: on the training distribution its total excess at depth 8 is 76.6 mnat against 2.1 for the plain network, which makes its overall loss worse (1.7 mnat/token against 1.1) although it is better everywhere else (0.5–0.6 against 1.0–1.3 at depths 0 to 4).
 
+**Make the depth comparison relative.** `deprot_d128_L4_T128_s1` is again the same Mess3 network with one change (`train.py --depth_rotary`): in every block, the first 8 pairs of query and key dimensions of every head are rotated by an angle proportional to the position's depth, one fixed frequency per pair (periods 2, 3, 5, 7, 11, 16, 32 and 64 levels; my choice). This is what rotary embeddings do with position. A score between two positions then depends on their depths only through the difference, so "same depth" is the same computation at depth 12 as at depth 3. The other 8 pairs of each head are untouched, the depth is counted outside the network as before, and the tag is not given: the network still has to find its bracket.
+
+| excess loss within class, mnat/token, by depth | 0–7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+|---|---|---|---|---|---|---|---|---|---|
+| plain network | 0.6–2.1 | 8.3 | 18.1 | 32.6 | 38.9 | 45.8 | 45.7 | 43.0 | 46.0 |
+| depth rotation | 0.2–0.3 | 0.7 | 0.6 | 0.6 | 0.5 | 0.7 | 0.5 | 0.6 | 0.7 |
+
+- It holds, flat, as far as the test reaches (depth 15, 753 positions). Against depth 7–8 positions not yet affected (0.26 mnat) the unseen depths are 2.0 to 2.5 times higher, inside the 3 times line fixed in advance.
+- The reader heads keep their bracket: 0.88 of their attention at depths 4 to 7, 0.85–0.86 at depths 9 to 12. The state-belief probe reads 0.98 within the cap and 0.97 at every unseen depth.
+- It is also the best network on the training distribution: 0.35 mnat/token overall and 0.55 just after a close, against 1.14 and 2.52 for the plain network.
+- It keeps no fine depth of its own. A linear probe reads depth with R² 0.65, and the depth means fall into three groups: the root, depths 1 to 7, and the cap together with everything deeper. Those are the three cases of the open and close probabilities, and the network applies the cap's rule at every depth from 8 up (probability of an open 0.001), as training taught it.
+- Prediction (Claude, before the result): better than the plain network past the cap, but only about 45% that it passes. It passes; I underrated it.
+
+**The four networks side by side** (Mess3, 4 layers, d = 128, seed 1, 20,000 steps; excess in mnat/token):
+
+| what the network is handed | training distribution, all positions | within class at depths 0–7 | 9 | 10 | 11 | 12 | attention on own bracket at depth 12 |
+|---|---|---|---|---|---|---|---|
+| nothing | 1.14 | 0.6–2.1 | 18.1 | 32.6 | 38.9 | 45.8 | 0.29 |
+| depth, linearly in the input | 0.68 | 0.3–1.3 | 15.9 | 37.2 | 48.0 | 55.6 | 0.24 |
+| the bracket tag in the input | 1.68 | 0.2–0.6 | 0.9 | 1.2 | 1.3 | 1.8 | 0.83 |
+| depth as a rotation of queries and keys | 0.35 | 0.2–0.3 | 0.6 | 0.6 | 0.5 | 0.7 | 0.85 |
+
+The second and fourth rows are handed the same exact depth. Given as a size along one direction it does not help past the trained depths; given so that only differences of depth enter attention, it does. So the obstacle to depth beyond training is the comparison of depths, and it goes away when that comparison is made the same at every depth. One seed and one process each.
+
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).
@@ -512,6 +536,7 @@ Within the trained range the count is not noisier late in the sequence (`depth_n
 - A hand-built transformer that implements the seven steps.
 - Causal tests of the tag: overwrite one bracket's tag with another's and check that the readers switch threads. Head ablations by step. Whether the type readout equals the sum of the per-token evidence readouts.
 - Context length beyond 128, which needs a network trained with a position scheme that extends. A wider range of training depths, to see whether the depth count then extends further.
+- The depth-rotation and tag-input networks on other seeds and on the other processes; the full validation on them; a network that must count its own depth and still compares it relatively (here the depth is counted outside the network); a causal test of the plain network's angle code.
 - Coupled brackets in `train.py` and `validate.py`; `coupled.py` is a standalone study.
 
 ## Files

@@ -46,6 +46,8 @@ def main():
     ap.add_argument("--bench", action="store_true")
     ap.add_argument("--tag", default="pilot")
     ap.add_argument("--depth_input", action="store_true", help="add the nesting depth to the input embedding, linearly")
+    ap.add_argument("--tag_input", action="store_true", help="add the bracket tag (position of the own open) to the input embedding")
+    ap.add_argument("--depth_rotary", action="store_true", help="rotate queries and keys by depth, so scores depend on depth differences")
     args = ap.parse_args()
     if args.threads:
         torch.set_num_threads(args.threads)
@@ -53,8 +55,9 @@ def main():
     dev = torch.device(args.device)
     proc = make(args.process, p_open=args.p_open, p_close=args.p_close, max_depth=args.max_depth)
     rng = np.random.default_rng(args.seed + 1)
-    model = GPT(proc.VOCAB, args.T, args.d, args.layers, args.heads,
-                depth_in=(proc.OPEN0, proc.CLOSE0) if args.depth_input else None).to(dev)
+    ids = (proc.OPEN0, proc.CLOSE0)
+    model = GPT(proc.VOCAB, args.T, args.d, args.layers, args.heads, depth_in=ids if args.depth_input else None,
+                tag_in=ids if args.tag_input else None, depth_rot=ids if args.depth_rotary else None).to(dev)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd, betas=(0.9, 0.98))
     sched = torch.optim.lr_scheduler.LambdaLR(
         opt, lambda s: min(1, (s + 1) / 500) * 0.5 * (1 + math.cos(math.pi * min(1, s / args.steps))))

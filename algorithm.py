@@ -51,7 +51,10 @@ def next_token_law(proc, depth, w, eta):
     pred = np.zeros(depth.shape + (proc.VOCAB,))
     pred[..., :proc.C] = (1 - po - pc)[..., None] * np.einsum("...ks,kxs->...x", w[..., None] * eta, proc.emit)
     pred[..., proc.OPEN0:proc.CLOSE0] = (po / proc.n_open)[..., None]
-    pred[..., proc.CLOSE0:] = pc[..., None] * w
+    if getattr(proc, "hidden_close", False):                # one close token for every type (vpa.py)
+        pred[..., proc.CLOSE0] = pc
+    else:
+        pred[..., proc.CLOSE0:] = pc[..., None] * w
     return pred
 
 

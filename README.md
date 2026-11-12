@@ -575,6 +575,48 @@ It does not carry over. The loss climbs with position at every depth and by the 
 - There is also a dependence on the distance to BOS. With rotary positions, shifting every position by 300 changes nothing (0.20 mnat either way), but moving only BOS further away, on sequences of the trained length, costs 3.8 to 7.5 mnat for shifts of 16 to 256. The network uses BOS to place itself, and that is tied to the trained length.
 - Predictions (Claude, before the result): a pass in the band 128–255 about 40%, in the later bands about 25%; it failed in all. Nested brackets better than the root, about 70%: wrong, they are worse in the later bands (77 against 51 mnat). Depth result kept, about 80%: kept in absolute terms, not by the 3 times ratio.
 
+## Coupled brackets with hidden types: the general visibly pushdown case
+
+So far a bracket's type was independent of everything outside it, or (in the coupled runs above) coupled to its parent's with the close token naming the type. The general case with HMM-typed frames has both of the following, and `vpa.py` implements it:
+
+- **coupling:** a child's type is drawn from Π[parent's type];
+- **hidden closes:** one close token for every type, so a child's type is never revealed.
+
+Exact prediction then needs two recursions. Write b_open for the belief over the parent's type at the last position before an open, and L(j) for the likelihood of everything inside a child if its type were j.
+
+- **down:** the child's prior is π = b_open · Π. The parent's b_open used the parent's own prior, which came from the grandparent, and so on.
+- **up:** at the close the parent's type gets the evidence log(Π · L). L includes what the child's own children told it, and so on down the completed subtree.
+
+Each position still needs only its own bracket's quantities (per-type state beliefs, own-token evidence, summed messages of closed children, prior). What the recursions cost is sequential steps, and the question for a network is whether it does them one level per layer or at once.
+
+**Choosing a process worth training on** (`design_coupled.py`, no training). The test needs both recursions to cost real loss beyond their first level, on sequences sampled from the process itself. Three sweeps over components, coupling and bracket rates (`logs/design_coupled_sweep*.txt` locally) showed what matters:
+
+- With the plain `mess3` family the token marginals are the same for every type, so a type shows only in pairs of tokens, and cutting either recursion costs little (at most 3.6 mnat for all of the up recursion).
+- Biasing each type towards its own token (`biased`: with probability β the component emits token k and stays where it is) makes single tokens evidence about the type and raises every cost. β = 0.5 is the best trade: stronger bias makes the type obvious from the bracket's own tokens and the deeper levels stop mattering.
+- Strong coupling and short brackets (open and close rates near 0.35, so a bracket has about one own token and one child) make a bracket depend on its ancestors and descendants for its type.
+- A coupling near a cycle (child = parent + 1) costs as much as one near the identity, and cannot be undone by treating all enclosing brackets as one type.
+
+The process chosen, `vpa_shift`: three biased Mess3 components (β = 0.5), Π = 0.95 · shift + 0.05 · uniform, open rate 0.35, close rate 0.36, depth capped at 8. Positions are spread almost evenly over depths 0 to 8 (18% down to 7%). On 1,024 sequences of 128 (`python vpa.py vpa_shift`, output in `runs/vpa_shift.design.txt`; the batched filter matches `coupled.py` to 3e-16), excess loss over exact Bayes in mnat/token:
+
+| observer | all | depth ≥ 3 | depth ≥ 5 | just read a close |
+|---|---|---|---|---|
+| no inference at all | 73.4 | 61.6 | 68.2 | 72.3 |
+| neither recursion | 36.7 | 42.9 | 45.3 | 38.2 |
+| 0 reads down, all up | 29.1 | 36.1 | 38.9 | 19.5 |
+| 1 read down | 15.6 | 23.3 | 24.5 | 10.1 |
+| 2 reads down | 8.2 | 15.1 | 15.4 | 5.2 |
+| 3 reads down | 4.4 | 8.1 | 10.4 | 2.5 |
+| 4 reads down | 2.2 | 4.1 | 6.9 | 1.2 |
+| 5 reads down | 1.1 | 2.1 | 3.5 | 0.5 |
+| all down, 0 levels up | 9.3 | 9.8 | 10.5 | 12.9 |
+| all down, 1 level up | 3.4 | 3.3 | 3.2 | 4.6 |
+| all down, 2 levels up | 1.2 | 1.0 | 0.8 | 1.7 |
+| all down, 3 levels up | 0.4 | 0.3 | 0.2 | 0.6 |
+
+The two recursions together are worth half of all inference (36.7 of 73.4). Each further read down roughly halves what is left, so a network that could chain only two reads would sit at 8.2 mnat overall and 15.4 at depth ≥ 5. The up recursion is worth less: 5.9 mnat for its first level, 2.2 for the second, 0.8 for the third. I could not find settings that make its deeper levels dearer without making the type obvious from elsewhere.
+
+**Experiment** (`vpa_train.py`, `queue_vpa.sh`): plain networks of 2, 3, 4 and 6 layers, d = 128, 20,000 steps, scored against this table by nesting depth. If layers bounded the nesting a network can process, a network of L layers would be held at one of the read-limited rows, and its loss would rise with depth sooner the fewer layers it has.
+
 ## Not yet done
 
 - More seeds. The pilot is one.

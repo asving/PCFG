@@ -266,6 +266,78 @@ def draw_simplex(title, d, per_row=20):
             + "".join(out) + "</svg>")
 
 
+def draw_paths(title, d, max_segments=10):
+    """One triangle per segment (the tokens between two bracket tokens) and per belief. The belief's path
+    through the segment is a line with an arrowhead; a bracket's earlier path is kept as a grey trail."""
+    proc = d["proc"]
+    close_names = proc.syms[proc.CLOSE0:]
+    bracket = proc.is_open(d["read"]) | proc.is_close(d["read"])
+    starts = [0] + [i for i in range(1, W) if bracket[i]]
+    segs = [list(range(a_, b_)) for a_, b_ in zip(starts, starts[1:] + [W])][:max_segments]
+    order = {}                                              # bracket tag -> number, in order of opening
+    for sg in segs:
+        order.setdefault(int(d["own"][sg[0]]), len(order))
+    n = len(segs)
+    cwid = (1140 - 150 - 16) / n
+    side = min(cwid - 16, 104.0)
+    hgt = side * np.sqrt(3) / 2
+    rows = [("type", d["w"], d["w_read"])] + [(f"state, if type {close_names[k]}", d["state"][:, k], d["state_read"][:, k]) for k in range(K)]
+
+    def point(p, cx, top):
+        p = np.clip(p, 0, None)
+        p = p / max(p.sum(), 1e-9)
+        return cx - side / 2 + (p[1] + 0.5 * p[2]) * side, top + hgt - p[2] * hgt
+
+    cols_ = TYPE_COL + [INK2]
+    defs = "".join(f'<marker id="a{j}" viewBox="0 0 10 10" refX="8" refY="5" markerUnits="userSpaceOnUse" markerWidth="{9 if j < len(cols_) else 7}" markerHeight="{9 if j < len(cols_) else 7}" orient="auto-start-reverse">'
+                   f'<path d="M0,0 L10,5 L0,10 z" fill="{c}"/></marker>' for j, c in enumerate(cols_ + [INK]))
+    out, y0 = [f"<defs>{defs}</defs>"], 150
+    seen = {}                                               # bracket tag -> positions already drawn
+    for c_, sg in enumerate(segs):
+        cx = 150 + c_ * cwid + cwid / 2
+        tag = int(d["own"][sg[0]])
+        typ = int(d["typed"][tag]) if tag >= 1 else None
+        ci = typ if typ is not None else K
+        resumed = tag in seen
+        name = "root" if tag == 0 else f"bracket {order[tag]}"
+        out.append(f'<rect x="{cx - side / 2:.1f}" y="{y0 - 48}" width="{side:.1f}" height="5" rx="2.5" fill="{cols_[ci]}"/>')
+        out.append(text(cx, y0 - 29, name, 11, INK, "middle", "600"))
+        out.append(text(cx, y0 - 15, "starts" if not resumed else "resumes", 10, MUTED, "middle"))
+        toks_ = "".join("^" if d["read"][i] == proc.BOS else proc.syms[d["read"][i]] for i in sg)
+        out.append(text(cx, y0 + 2, toks_[0] + " " + toks_[1:], 11, INK2, "middle"))
+        y = y0 + 16
+        for r_, (label, exact, net) in enumerate(rows):
+            if c_ == 0:
+                out.append(text(24, y + hgt / 2 + 6, label, 11, INK2))
+            own_row = r_ >= 1 and typ is not None and r_ - 1 == typ
+            tri = f"{cx - side / 2:.1f},{y + hgt:.1f} {cx + side / 2:.1f},{y + hgt:.1f} {cx:.1f},{y:.1f}"
+            out.append(f'<polygon points="{tri}" fill="{"#f3f2ee" if own_row else "none"}" stroke="{AXIS}" stroke-width="1"/>')
+            if resumed:                                     # the bracket's earlier path, as a trail
+                trail = [point(exact[i], cx, y) for i in seen[tag]]
+                if len(trail) > 1:
+                    out.append(f'<polyline points="{" ".join(f"{a_:.1f},{b_:.1f}" for a_, b_ in trail)}" fill="none" stroke="{AXIS}" stroke-width="1.5" stroke-linejoin="round"/>')
+            for vals, col, wid, mk in ((net, cols_[ci], 2.2, f"a{ci}"), (exact, INK, 1.0, f"a{len(cols_)}")):
+                pts = [point(vals[i], cx, y) for i in sg]
+                if len(pts) > 1:
+                    out.append(f'<polyline points="{" ".join(f"{a_:.1f},{b_:.1f}" for a_, b_ in pts)}" fill="none" stroke="{col}" stroke-width="{wid}" '
+                               f'stroke-linejoin="round" stroke-linecap="round" marker-end="url(#{mk})"/>')
+                sx, sy = pts[0]
+                out.append(f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="{3.2 if col != INK else 5}" fill="{col if col != INK else "none"}" stroke="{col}" stroke-width="1.1"/>')
+            y += hgt + 18
+        seen.setdefault(tag, []).extend(sg)
+    h = int(y0 + 16 + len(rows) * (hgt + 18) + 6)
+    key = (f'<circle cx="29" cy="78" r="5" fill="none" stroke="{INK}" stroke-width="1.1"/><line x1="36" y1="78" x2="58" y2="78" stroke="{INK}" stroke-width="1" marker-end="url(#a{len(cols_)})"/>'
+           + text(66, 82, "exact: ring at the start, arrow at the end", 11, INK2)
+           + f'<circle cx="330" cy="78" r="3.2" fill="{INK2}"/><line x1="335" y1="78" x2="357" y2="78" stroke="{INK2}" stroke-width="2.2" marker-end="url(#a{K})"/>'
+           + text(366, 82, "network (linear readout), in the colour of the bracket's type", 11, INK2)
+           + f'<line x1="726" y1="78" x2="750" y2="78" stroke="{AXIS}" stroke-width="1.5"/>' + text(758, 82, "the same bracket's earlier path", 11, INK2)
+           + f'<rect x="950" y="72" width="12" height="11" fill="#f3f2ee" stroke="{AXIS}"/>' + text(968, 82, "the bracket's own type", 11, INK2))
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="{h}" viewBox="0 0 1140 {h}"><rect width="1140" height="{h}" fill="{SURF}"/>'
+            + text(24, 34, title, 17, INK, weight="600")
+            + text(24, 54, "One column per stretch of tokens between two bracket tokens. In each triangle the belief moves along the line, from the marker to the arrowhead.", 12, INK2)
+            + key + "".join(out) + "</svg>")
+
+
 css = f"""body{{margin:0;background:{PAGE};color:{INK};font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light}}
 .wrap{{width:1140px;margin:0 auto;padding:28px 0 40px}} h1{{font-size:22px;margin:0 0 6px}} p{{font-size:14px;line-height:1.5;color:{INK2};margin:6px 0}}
 .card{{background:{SURF};border:1px solid rgba(11,11,11,0.10);border-radius:10px;margin:16px 0;overflow:hidden}} svg{{display:block}}
@@ -280,6 +352,14 @@ cap_s = ("The same sequence is shown to two networks; only the open token differ
          "their triangle (the starting belief); the type point jumps to the centre when the open is #, and straight to a corner when the open "
          "names the type. Just past every close, all four points jump back to where they were in the last triangle before that bracket opened. "
          "Bars above the tokens mark each bracket from its open to its close.")
+cap_p = ("The same sequence is shown to two networks; only the open token differs. Corners are as in the key of the other figure: for the type row, "
+         "bottom left ), bottom right ], top }; for the state rows, states 1, 2 and 3. A new bracket starts at the centre (in the type row, at a corner "
+         "when the open names the type). A resumed bracket starts where its own grey trail ends, however much happened in between.")
+paths = {name: draw_paths(title, d) for name, title, d in runs}
+open("figures/example_paths.html", "w").write(page(
+    "<h1>One sequence, as paths on the simplex</h1><p>" + esc(cap_p) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in paths.values())))
+for name, f in paths.items():
+    open(f"figures/example_paths_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_p)}</div></div>'))
 simplex = {name: draw_simplex(title, d) for name, title, d in runs}
 figs = {name: draw(title, d) for name, title, d in runs}
 os.makedirs("figures", exist_ok=True)

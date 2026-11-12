@@ -728,6 +728,20 @@ Predictions (Claude, written before any result; `queue_vpa3.sh`):
 3. On the non-commuting process the loss grows with nesting depth more steeply than on the control at two and three layers (65%).
 4. Networks of four or more layers on the non-commuting process hold each bracket's relabelling from the root (one of six) in a linearly readable form, named correctly at more than 80% of positions after some block (60%).
 
+## The algebra inside each component
+
+Belief updating multiplies the state by one matrix per token, so what a component asks of a network is set by the monoid its token matrices generate, up to positive scale. `monoids.py` (output `runs/monoids.txt`) works these out.
+
+| component | the monoid, up to scale | forgetting |
+|---|---|---|
+| Mess3 | positive matrices: an infinite monoid of contractions, each token pulling the belief towards its own corner. No group inside. | two beliefs fed the same tokens close by a factor 0.24, 0.47, 0.13 per token (the three components) |
+| clock | the same with a leaky 3-cycle: the token-blind map has eigenvalues 0.85·e^(±120° i) | 0.41 per token |
+| fern | token 0 is a reset (rank one). Token 1 is a rotation by a fixed angle (112°, 57°, 172°) whose three surviving eigenvalues have equal modulus, so up to scale a pure rotation. The monoid is "count since the last reset". | only through the reset |
+| Tom Quantum | a group. Each token matrix is a scalar times a Lorentz boost (it preserves diag(1, −1, −1) to 1e-17), and tokens come in inverse pairs. The four tokens are translations of the hyperbolic plane (the belief disc) along two perpendicular lines, forwards and back. Non-abelian: the commutator of the two boosts is a rotation by 35° at β/α = 0.364 and a boost of rapidity 6.05 at 0.839. For β > α each token also flips the other coordinate. | no single element contracts, but random products do |
+| RRXOR | each token is a partial map on the five states; the monoid has 73 elements and its maximal subgroups have sizes 1 and 3: the three-phase cycle, and nothing else that is a group | none along the phase |
+
+Tom Quantum shows that a group inside the monoid, even a non-solvable one, is not what makes a process hard: its group is not compact, and products of random boosts forget where they started. What does not forget is a finite group acting by permutation, such as the phase in RRXOR or the relabellings along a path in the nested processes: Z3 in `vpa_shift` and `vpa_c3`, the six relabellings of three types in `vpa_s3`.
+
 ## Not yet done
 
 - More seeds. The pilot is one.

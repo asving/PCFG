@@ -22,6 +22,7 @@ import algorithm
 
 run_h, run_o = sys.argv[1], sys.argv[2]
 seed = int(sys.argv[3]) if len(sys.argv) > 3 else 4242
+PREFIX = sys.argv[4] if len(sys.argv) > 4 else "example"
 W = 60                                                       # positions shown
 
 
@@ -78,6 +79,18 @@ def follow(args, proc, model, toks):
         Wt = np.linalg.solve((X - mx).T @ (X - mx) + 1e-4 * len(X) * np.eye(X.shape[1]), (X - mx).T @ (Y - my))
         return lambda Z: (Z - mx) @ Wt + my
     read_state, read_type = probe(fit["state"]), probe(fit["w"])
+    simplex = S == 3 and np.allclose(proc.r, 1)
+    views = None
+    if not simplex:
+        views = []
+        for k in range(K):
+            E = fit["state"][:, :, k].reshape(-1, S)
+            if S == 3 and np.allclose(proc.r[k], [1, 0, 0]):      # Tom Quantum: the state is (1, a, b); plot (a, b) in the unit disc
+                views.append(("disc", np.zeros(S), np.eye(S)[1:], 1.0))
+            else:                                                  # otherwise the two leading directions of the exact belief
+                mu = E.mean(0)
+                dirs = np.linalg.svd(E - mu, full_matrices=False)[2][:2]
+                views.append(("square", mu, dirs, 1.0 / np.percentile(np.abs((E - mu) @ dirs.T), 99.9)))
     ex = algorithm.run(proc, toks)
     logits, resid, _ = trace(model, torch.from_numpy(ex["read"]), want_attn=False)
     R = resid[-1][0].double().numpy()
@@ -85,7 +98,8 @@ def follow(args, proc, model, toks):
     close_p = np.exp(lp[:, proc.CLOSE0:proc.CLOSE0 + K])
     implied = np.where((ex["depth"][0] >= 1)[:, None], close_p / close_p.sum(-1, keepdims=True), np.nan)
     return dict(read=ex["read"][0], depth=ex["depth"][0], own=ex["own"][0], w=ex["w"][0], state=ex["state"][0], typed=typed,
-                w_read=read_type(R).clip(0, 1), w_implied=implied, state_read=read_state(R).reshape(T, K, S).clip(0, 1),
+                w_read=read_type(R).clip(0, 1), w_implied=implied, views=views,
+                state_read=read_state(R).reshape(T, K, S).clip(0, 1) if simplex else read_state(R).reshape(T, K, S),
                 excess=1e3 * algorithm.excess(ex["pred"][0], lp), proc=proc)
 
 
@@ -204,12 +218,25 @@ def draw_simplex(title, d, per_row=20):
             spans.append(sp)
     spans += stack
     lanes = max([sp[2] for sp in spans] + [1])
-    rows = [("type", d["w"], d["w_read"])] + [(f"state, if type {close_names[k]}", d["state"][:, k], d["state_read"][:, k]) for k in range(K)]
+    rows = [("type", d["w"], d["w_read"], None)] + [(f"state, if type {close_names[k]}", d["state"][:, k], d["state_read"][:, k],
+                                                      d["views"][k] if d["views"] else None) for k in range(K)]
+    rad = hgt / 2
 
-    def point(p, cx, top):
-        p = np.clip(p, 0, None)
-        p = p / max(p.sum(), 1e-9)
-        return cx - side / 2 + (p[1] + 0.5 * p[2]) * side, top + hgt - p[2] * hgt
+    def point(p, cx, top, view=None):
+        if view is None:                                    # a point of the simplex
+            p = np.clip(p, 0, None)
+            p = p / max(p.sum(), 1e-9)
+            return cx - side / 2 + (p[1] + 0.5 * p[2]) * side, top + hgt - p[2] * hgt
+        _, mu, dirs, sc = view
+        q = np.clip((p - mu) @ dirs.T * sc, -1.2, 1.2)
+        return cx + q[0] * rad, top + rad - q[1] * rad
+
+    def frame(cx, top, view=None):
+        if view is None:
+            return f'<polygon points="{cx - side / 2:.1f},{top + hgt:.1f} {cx + side / 2:.1f},{top + hgt:.1f} {cx:.1f},{top:.1f}" fill="none" stroke="{AXIS}" stroke-width="1"/>'
+        if view[0] == "disc":
+            return f'<circle cx="{cx:.1f}" cy="{top + rad:.1f}" r="{rad:.1f}" fill="none" stroke="{AXIS}" stroke-width="1"/>'
+        return f'<rect x="{cx - rad:.1f}" y="{top:.1f}" width="{2 * rad:.1f}" height="{2 * rad:.1f}" fill="none" stroke="{AXIS}" stroke-width="1"/>'
 
     out, y = [], 96
     for r0 in range(0, W, per_row):
@@ -229,14 +256,13 @@ def draw_simplex(title, d, per_row=20):
         out.append(text(24, y, "token read", 11, INK2))
         y += 8
         top = y
-        for label, exact, net in rows:
+        for label, exact, net, view in rows:
             out.append(text(24, y + hgt / 2 + 6, label, 11, INK2))
             for i in cols:
                 cx = xs(i) + cw / 2
-                tri = f"{cx - side / 2:.1f},{y + hgt:.1f} {cx + side / 2:.1f},{y + hgt:.1f} {cx:.1f},{y:.1f}"
-                out.append(f'<polygon points="{tri}" fill="none" stroke="{AXIS}" stroke-width="1"/>')
-                ex_, ey_ = point(exact[i], cx, y)
-                nx_, ny_ = point(net[i], cx, y)
+                out.append(frame(cx, y, view))
+                ex_, ey_ = point(exact[i], cx, y, view)
+                nx_, ny_ = point(net[i], cx, y, view)
                 col = TYPE_COL[cur_type[i]] if cur_type[i] is not None else INK2
                 out.append(f'<circle cx="{nx_:.1f}" cy="{ny_:.1f}" r="3" fill="{col}"><title>{esc(label)}, position {i}: network {np.round(net[i], 2)}, exact {np.round(exact[i], 2)}</title></circle>')
                 out.append(f'<circle cx="{ex_:.1f}" cy="{ey_:.1f}" r="5" fill="none" stroke="{INK}" stroke-width="1.1"/>')
@@ -249,7 +275,14 @@ def draw_simplex(title, d, per_row=20):
     # key
     kx, ky, ks = 800, 40, 46.0
     kh = ks * np.sqrt(3) / 2
-    for j, (names, lab) in enumerate(((["type " + c for c in close_names], "type row"), ([f"state {s_ + 1}" for s_ in range(S)], "state rows"))):
+    keys = [(["type " + c for c in close_names], "type row")]
+    if d["views"] is None:
+        keys.append(([f"state {s_ + 1}" for s_ in range(S)], "state rows"))
+    else:
+        out.append(frame(kx + 110, ky + 6, d["views"][0]))
+        out.append(text(kx + 110 + rad + 8, ky + 6 + rad - 3, "state rows: the state's two", 10, MUTED))
+        out.append(text(kx + 110 + rad + 8, ky + 6 + rad + 9, "disc coordinates" if d["views"][0][0] == "disc" else "leading directions", 10, MUTED))
+    for j, (names, lab) in enumerate(keys):
         cx = kx + j * 170
         out.append(f'<polygon points="{cx - ks / 2:.1f},{ky + kh:.1f} {cx + ks / 2:.1f},{ky + kh:.1f} {cx:.1f},{ky:.1f}" fill="none" stroke="{AXIS}"/>')
         out += [text(cx - ks / 2 - 4, ky + kh + 4, names[0], 10, MUTED, "end"), text(cx + ks / 2 + 4, ky + kh + 4, names[1], 10, MUTED),
@@ -262,7 +295,7 @@ def draw_simplex(title, d, per_row=20):
     h = int(y + 6)
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="{h}" viewBox="0 0 1140 {h}"><rect width="1140" height="{h}" fill="{SURF}"/>'
             + text(24, 34, title, 17, INK, weight="600")
-            + text(24, 54, "One triangle per position, after reading the token above it. A dot in a ring means the network agrees with exact Bayes.", 12, INK2)
+            + text(24, 54, "One frame per position, after reading the token above it. A dot in a ring means the network agrees with exact Bayes.", 12, INK2)
             + "".join(out) + "</svg>")
 
 
@@ -355,22 +388,27 @@ cap_s = ("The same sequence is shown to two networks; only the open token differ
 cap_p = ("The same sequence is shown to two networks; only the open token differs. Corners are as in the key of the other figure: for the type row, "
          "bottom left ), bottom right ], top }; for the state rows, states 1, 2 and 3. A new bracket starts at the centre (in the type row, at a corner "
          "when the open names the type). A resumed bracket starts where its own grey trail ends, however much happened in between.")
-paths = {name: draw_paths(title, d) for name, title, d in runs}
-open("figures/example_paths.html", "w").write(page(
-    "<h1>One sequence, as paths on the simplex</h1><p>" + esc(cap_p) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in paths.values())))
-for name, f in paths.items():
-    open(f"figures/example_paths_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_p)}</div></div>'))
-simplex = {name: draw_simplex(title, d) for name, title, d in runs}
-figs = {name: draw(title, d) for name, title, d in runs}
 os.makedirs("figures", exist_ok=True)
-open("figures/example.html", "w").write(page(
-    "<h1>One sequence, belief by belief</h1><p>" + esc(cap) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in figs.values())))
-for name, f in figs.items():
-    open(f"figures/example_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap)}</div></div>'))
-open("figures/example_simplex.html", "w").write(page(
-    "<h1>One sequence, belief by belief, on the simplex</h1><p>" + esc(cap_s) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in simplex.values())))
+simplex = {name: draw_simplex(title, d) for name, title, d in runs}
+if runs[0][2]["views"] is None:
+    cap_s = cap_s.replace("triangle", "triangle").replace("frame", "triangle")
+else:
+    cap_s = cap_s.replace("jump to the centre of their triangle (the starting belief)", "jump back to the starting belief").replace("the last triangle", "the last frame")
+open(f"figures/{PREFIX}_simplex.html", "w").write(page(
+    "<h1>One sequence, belief by belief</h1><p>" + esc(cap_s) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in simplex.values())))
 for name, f in simplex.items():
-    open(f"figures/example_simplex_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_s)}</div></div>'))
+    open(f"figures/{PREFIX}_simplex_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_s)}</div></div>'))
+if runs[0][2]["views"] is None:                              # the other two views need 3-state simplex beliefs
+    paths = {name: draw_paths(title, d) for name, title, d in runs}
+    open(f"figures/{PREFIX}_paths.html", "w").write(page(
+        "<h1>One sequence, as paths on the simplex</h1><p>" + esc(cap_p) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in paths.values())))
+    for name, f in paths.items():
+        open(f"figures/{PREFIX}_paths_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap_p)}</div></div>'))
+    figs = {name: draw(title, d) for name, title, d in runs}
+    open(f"figures/{PREFIX}.html", "w").write(page(
+        "<h1>One sequence, belief by belief</h1><p>" + esc(cap) + "</p>" + "".join(f'<div class="card">{f}</div>' for f in figs.values())))
+    for name, f in figs.items():
+        open(f"figures/{PREFIX}_{name}.html", "w").write(page(f'<div class="card" style="margin:0">{f}<div class="cap">{esc(cap)}</div></div>'))
 print("sequence (hidden opens):", proc_h.show(tok_h[0, :W - 1]))
 print("sequence (typed opens): ", proc_o.show(tok_o[0, :W - 1]))
 for name, _, d in runs:

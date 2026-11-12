@@ -197,13 +197,23 @@ The same patch applied to the algorithm after its evidence step gives `R` 0.75 a
 
 **One sequence, belief by belief** (`python example.py RUN_HIDDEN RUN_OPEN`, written to `figures/example.html`). The two processes differ only in the open token, so both networks are shown the same sequence. Each column is a position; rows are the type posterior of the current bracket and the state belief under each type, exact and as read from the network. The sequence was picked from 6,000 samples for having brackets of different types opened inside one another; the networks are the 20,000-step `mess3` and `mess3+open` runs.
 
-One column per stretch of tokens between two bracket tokens, one triangle per belief. The belief moves along the line from the marker to the arrowhead: black for exact Bayes, coloured for the network's linear readout. A bracket that resumes after a child starts where its own grey trail ends.
+One small frame per position and per belief: a ring for exact Bayes, a dot for the network's linear readout, coloured by the current bracket's type. At an open the points jump to the starting belief; just past a close they jump back to where they were before that bracket opened.
 
-![Hidden opens](figures/example_paths_hidden.png)
+![Mess3, hidden opens](figures/example_simplex_hidden.png)
 
-![Typed opens](figures/example_paths_open.png)
+![Mess3, typed opens](figures/example_simplex_open.png)
 
-Two other views of the same sequence: one small triangle per position (`figures/example_simplex_hidden.png`, `example_simplex_open.png`), and rows of shaded cells that also show the type read from the network's own close-token probabilities (`figures/example_hidden.png`, `example_open.png`).
+The same for Tom Quantum (6 layers; the state is drawn in a disc) and fern (4 layers; the state is drawn in its two leading directions). `python example.py RUN_HIDDEN RUN_OPEN SEED PREFIX` makes each pair.
+
+![Tom Quantum, hidden opens](figures/example_tomq_simplex_hidden.png)
+
+![Tom Quantum, typed opens](figures/example_tomq_simplex_open.png)
+
+![Fern, hidden opens](figures/example_fern_simplex_hidden.png)
+
+![Fern, typed opens](figures/example_fern_simplex_open.png)
+
+Two other views of the Mess3 sequence: the belief's path through each stretch between brackets, as an arrowed line in one larger triangle (`figures/example_paths_hidden.png`, `example_paths_open.png`), and rows of shaded cells that also show the type read from the network's own close-token probabilities (`figures/example_hidden.png`, `example_open.png`).
 
 ## Which processes to train on
 

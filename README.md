@@ -448,6 +448,19 @@ R² here lets the probe's constant be re-estimated at each depth, so a plain shi
 - So the network does not find its bracket by comparing depths as a linear probe reads them. Within the trained range it knows its bracket better than that reading allows. Either depth is held in a sharper, non-linear form that the probe blurs, or the bracket is found by a route that does not pass through an absolute depth. Not yet separated.
 - Prediction (Claude, before the run): the reading would pick out where the network fails but overshoot the size. Right on the first; on the second it overshoots within the cap and undershoots beyond depth 9.
 
+**Does it help to hand the network its depth?** (Asvin's test.) `depthin_d128_L4_T128_s1` is the Mess3 network retrained with the same settings and seed, except that each position's input embedding gains depth / 4 times one learned vector (`train.py --depth_input`; the count is done outside the network, in `model.GPT.embed`). Depth is then exact and linear in the input at every depth: the probe reads 9.00, 10.00, 11.00 with spread 0.01.
+
+| excess loss within class, mnat/token, by depth | 0–7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|
+| without the depth input (`night_d128_L4_T128_s1`) | 0.6–2.1 | 8.3 | 18.1 | 32.6 | 38.9 | 45.8 |
+| with the depth input | 0.3–1.3 | 4.7 | 15.9 | 37.2 | 48.0 | 55.6 |
+
+- Within the trained depths it helps: 0.7 mnat/token overall against 1.1, and 1.3 against 2.5 just after a close.
+- Beyond them it does not: the loss past depth 8 is as large as before. The bracket tag still collapses (R² 0.83 at depth 7, 0.45 at depth 9, 0.03 at depth 10, constant re-estimated) and the type posterior with it (0.85, 0.52, 0.15).
+- So the count is not what stops the network at unseen depths. What it does with the depth is fitted to the depths it saw. Our algorithm given this input would be exact at every depth, since its step 2 only asks whether two depths are equal; the network's step 2 is not that comparison.
+- A limit of this way of giving depth: the learned vector is large (2.2 per level, against token and position embeddings of norm 10 to 12), so the depth term is 60% of the squared norm of the input at depth 8, 66% at depth 9 and 77% at depth 12. Layer norm then shrinks everything else in the input at unseen depths. That alone could cause part of the failure; this run does not separate it from a failure to compare unseen depths.
+- Prediction (Claude, before the result): better than before at depths 9 to 11 but not a pass. Not a pass was right; better was wrong except at depth 9.
+
 Within the trained range the count is not noisier late in the sequence (`depth_noise.py`: RMS error 0.08–0.18 at depths 0 to 4 at every position). It is noisier at the depths training showed least (0.17–0.49 at depths 6 to 8).
 
 **Context length** cannot be tested on these networks. `model.py` uses a learned position table with 128 rows, so a position past 128 has no embedding. It needs a network trained with positions that extend (rotary, or none).

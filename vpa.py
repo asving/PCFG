@@ -41,6 +41,9 @@ CONFIGS = {
     # the child is its parent's type plus one with probability 0.95 (+ 0.05 / 3), otherwise uniform
     "vpa_shift": dict(components=lambda: [biased(x, a, k, 0.5) for k, (x, a) in enumerate(PARAMS)],
                       PI=0.95 * SHIFT + 0.05 * U3, p_open=0.35, p_close=0.36, max_depth=8),
+    # weaker coupling and stronger token bias: here the shortcut of taking the coupling as exact is also expensive
+    "vpa_shift2": dict(components=lambda: [biased(x, a, k, 0.7) for k, (x, a) in enumerate(PARAMS)],
+                       PI=0.90 * SHIFT + 0.10 * U3, p_open=0.35, p_close=0.36, max_depth=8),
     # a noisy 3-cycle with unequal noise: no symmetry between the types
     "vpa_cycle": dict(components=lambda: [biased(x, a, k, 0.5) for k, (x, a) in enumerate(PARAMS)],
                       PI=np.array([[0.03, 0.95, 0.02], [0.05, 0.10, 0.85], [0.90, 0.04, 0.06]]),
@@ -51,6 +54,15 @@ CONFIGS = {
 def make(config, **over):
     c = dict(CONFIGS[config], **over)
     return VPA(c["components"](), c["PI"], c["p_open"], c["p_close"], c["max_depth"], name=config)
+
+
+def rigid(config):
+    """The same process with the coupling's noise removed: every bracket's type is then fixed by the root's
+    type and its depth. Its exact law is the prediction of an observer that needs no bracket structure beyond
+    depth, the simplest shortcut for a strongly coupled process."""
+    c = CONFIGS[config]
+    hard = np.eye(len(c["PI"]))[np.asarray(c["PI"]).argmax(-1)]
+    return VPA(c["components"](), 0.999 * hard + 0.001 / len(hard), c["p_open"], c["p_close"], c["max_depth"], name=config + "_rigid")
 
 
 class VPA(BracketProcess):
@@ -201,8 +213,9 @@ if __name__ == "__main__":
     print(f"\n1024 sequences of 128; exact Bayes {nll:.3f} nats/token; content {proc.is_content(toks).mean():.2f}, opens {proc.is_open(toks).mean():.2f}, closes {proc.is_close(toks).mean():.2f} of tokens")
     print("share of positions by depth 0-8: " + " ".join(f"{(depth == d).mean():.2f}" for d in range(9)))
     print(f"\n{'excess loss over exact, mnat/token':38s}" + "".join(f"{c:>20s}" for c in cells))
-    label = {"prior": "no inference at all", "ignore": "neither recursion"}
-    for n in ["prior", "ignore"] + [("down", h) for h in range(6)] + [("up", u) for u in range(4)]:
+    preds["rigid"] = rigid(config).filter(toks)[0]["exact"]
+    label = {"prior": "no inference at all", "ignore": "neither recursion", "rigid": "coupling taken as exact"}
+    for n in ["prior", "ignore", "rigid"] + [("down", h) for h in range(6)] + [("up", u) for u in range(4)]:
         name = label.get(n) or (f"{n[1]} read{'s' if n[1] != 1 else ''} down, all up" if n[0] == "down" else f"all down, {n[1]} level{'s' if n[1] != 1 else ''} up")
         kl = algorithm.excess(preds["exact"], preds[n])
         print(f"{name:38s}" + "".join(f"{1e3 * kl[m].mean():20.1f}" for m in cells.values()))

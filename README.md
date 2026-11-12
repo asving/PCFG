@@ -617,6 +617,54 @@ The two recursions together are worth half of all inference (36.7 of 73.4). Each
 
 **Experiment** (`vpa_train.py`, `queue_vpa.sh`): plain networks of 2, 3, 4 and 6 layers, d = 128, 20,000 steps, scored against this table by nesting depth. If layers bounded the nesting a network can process, a network of L layers would be held at one of the read-limited rows, and its loss would rise with depth sooner the fewer layers it has.
 
+**A shortcut the design study missed.** With coupling this strong, an observer that takes the coupling as exact (one type for the whole sequence, shifted by depth, no bracket structure beyond depth) is only 3.7 mnat from exact on `vpa_shift` (7.5 at depth ≥ 5). So on this process a network has 36.7 mnat of reasons to use the two recursions in some form, but only about 4 to use the tree. A second process, `vpa_shift2` (bias 0.7, coupling 0.9, same rates), makes that shortcut expensive too:
+
+| observer, `vpa_shift2` | all | depth ≥ 5 | just read a close |
+|---|---|---|---|
+| neither recursion | 56.9 | 68.2 | 63.1 |
+| coupling taken as exact | 15.9 | 29.1 | 11.7 |
+| 1 read down | 18.0 | 26.5 | 11.0 |
+| 2 reads down | 7.2 | 12.8 | 4.3 |
+| 3 reads down | 2.9 | 6.5 | 1.6 |
+| all down, 0 levels up | 11.2 | 14.0 | 19.6 |
+| all down, 1 level up | 2.4 | 2.5 | 4.3 |
+
+**The 4-layer network on `vpa_shift`** (`vpa_shift_plain_d128_L4_T128_s0`; analysis `vpa_validate.py`, output `runs/NAME.validate.txt`). It reaches 2.1 mnat/token.
+
+| excess loss, mnat/token | all | depth ≥ 5 | new bracket, depth ≥ 3 | close of a bracket with children |
+|---|---|---|---|---|
+| 4 reads down | 2.6 | 7.6 | 5.9 | 0.8 |
+| 5 reads down | 1.3 | 3.8 | 3.0 | 0.2 |
+| all down, 1 level up | 3.2 | 3.1 | 3.1 | 7.1 |
+| all down, 2 levels up | 1.1 | 0.9 | 1.0 | 2.5 |
+| coupling taken as exact | 3.9 | 8.1 | 6.1 | 3.0 |
+| the network | 2.1 | 2.8 | 2.1 | 2.9 |
+
+- Its loss does not grow with nesting: 1.2 to 2.2 mnat at depths 1 to 7 (5.2 at the cap).
+- In new brackets at depth ≥ 3 it is below the observer that chains five reads, and after the close of a bracket that had children it is at the two-levels-up observer. It also beats the shortcut of taking the coupling as exact, by 3 to 1 at depth.
+- Only blocks 3 and 4 touch content. Replacing what any position reads from any other by a content-free version (below) changes nothing in block 1 (2.4 against 2.4) or block 2 (2.6), and costs 21.0 in block 3 and 51.2 in block 4. A network that chained one read per layer could chain two.
+
+Probes (R² after each block): the evidence of the parent, the grandparent and the bracket three levels up become readable together after block 3 (0.38, 0.35, 0.30), and the bracket's type prior after block 4 (0.07, 0.40, 0.89 after blocks 2, 3, 4). After block 4 the ancestors' evidence is more readable than the bracket's own exact summary would allow (0.56, 0.52, 0.42 against 0.37, 0.29, 0.24), so positions hold the enclosing brackets' evidence itself and not only the prior computed from it.
+
+Attention (reading positions at depth ≥ 3): blocks 1 and 2 spread evenly. In block 3 two heads read brackets three or more levels up the path (0.34 and 0.36 of their attention), and one reads the neighbourhood (own bracket 0.22, parent 0.25, closed children 0.21). In block 4 each of three heads reads content tokens of one class of depth difference modulo 3 (0.23 on the same class against 0.01 on each other; 0.14 against 0.01; 0.12 against 0.03). Under this coupling a bracket's likely type is an ancestor's type plus the depth difference, so those are heads per type class: evidence about a relabelled type, added at once.
+
+Knockouts. For chosen (reading, attended) pairs, what is read is replaced by what the attended position offers on average when the sequence's content tokens are redrawn; brackets, depths, positions and attention weights are untouched. If far information reached a position only level by level, removing the direct read would cost nothing.
+
+| removed, in every block | all | observer that lacks the same information |
+|---|---|---|
+| nothing | 2.4 | |
+| content 1+ levels up the path | 31.6 | 0 reads down: 29.9 |
+| content 2+ levels up the path | 10.4 | 1 read down: 16.2 |
+| content 3+ levels up the path | 6.0 | 2 reads down: 8.9 |
+| content 1+ levels inside closed brackets | 12.4 | 0 levels up: 8.2 |
+| content 2+ levels inside closed brackets | 4.2 | 1 level up: 3.8 |
+| the position just before the own `#` | 4.0 | |
+| the own `#` | 3.0 | |
+
+Removing the direct reads of content two or more levels up takes the network 58% of the way to the observer that never had it (10.4 between 2.4 and 16.2), and 55% for three or more levels. So more than half of what distant enclosing brackets contribute is read from their tokens directly, and the rest arrives through one further hop (block 4 reading the parent's positions, which did their own gather in block 3). Upward, content two or more levels inside a closed bracket is read directly: removing it costs what the one-level observer loses. The places a chained computation would store its results, the position before the own `#` and the `#` itself, are worth 1.6 and 0.6 mnat.
+
+So this network does both recursions at once, in two blocks, and nesting depth is not bounded by its layers. The layer sweep and the second process are below when they finish.
+
 ## Not yet done
 
 - More seeds. The pilot is one.

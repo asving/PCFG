@@ -1,0 +1,20 @@
+vpa_shift2: batched filter vs coupled.py on 40 sequences, six observers: max |difference| 7.2e-16
+algorithm.py's structure on this process: depth agrees True; own-token evidence agrees to 2.8e-14; per-type state to 0.0e+00
+
+1024 sequences of 128; exact Bayes 1.262 nats/token; content 0.38, opens 0.32, closes 0.30 of tokens
+share of positions by depth 0-8: 0.18 0.15 0.13 0.11 0.10 0.09 0.08 0.08 0.07
+
+excess loss over exact, mnat/token                     all          depth >= 3          depth >= 5   just read a close
+no inference at all                                  139.0               113.9               125.5               139.4
+neither recursion                                     56.9                65.7                68.2                63.1
+coupling taken as exact                               15.9                24.4                29.1                11.7
+0 reads down, all up                                  44.3                52.8                56.2                27.7
+1 read down, all up                                   18.0                26.0                26.5                11.0
+2 reads down, all up                                   7.2                13.3                12.8                 4.3
+3 reads down, all up                                   2.9                 5.3                 6.5                 1.6
+4 reads down, all up                                   1.1                 2.0                 3.3                 0.6
+5 reads down, all up                                   0.4                 0.8                 1.2                 0.2
+all down, 0 levels up                                 11.2                13.1                14.0                19.6
+all down, 1 level up                                   2.4                 2.6                 2.5                 4.3
+all down, 2 levels up                                  0.5                 0.5                 0.4                 1.0
+all down, 3 levels up                                  0.1                 0.1                 0.0                 0.2

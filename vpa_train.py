@@ -26,6 +26,8 @@ def cut_name(n):
         return "no inference at all"
     if n == "ignore":
         return "neither recursion"
+    if n == "rigid":
+        return "coupling taken as exact"
     return f"{n[1]} read{'s' if n[1] != 1 else ''} down, all up" if n[0] == "down" else f"all down, {n[1]} level{'s' if n[1] != 1 else ''} up"
 
 
@@ -65,7 +67,8 @@ def main():
     preds, ref = proc.filter(etoks)
     exact, depth = preds["exact"], ref["depth"]
     cells = cells_of(proc, etoks, ref)
-    cuts = ["prior", "ignore"] + [n for n in preds if isinstance(n, tuple)]
+    preds["rigid"] = vpa.rigid(args.config).filter(etoks)[0]["exact"]
+    cuts = ["prior", "ignore", "rigid"] + [n for n in preds if isinstance(n, tuple)]
     floors = {cut_name(n): {c: float(algorithm.excess(exact, preds[n])[m].mean()) for c, m in cells.items()} for n in cuts}
     floors_depth = {cut_name(n): [float(algorithm.excess(exact, preds[n])[depth == d].mean()) for d in range(proc.D + 1)] for n in cuts}
     print(f"{name}: excess loss over exact Bayes, mnat/token")

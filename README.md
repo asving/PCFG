@@ -754,6 +754,26 @@ How much of the path's relabelling the networks hold (`vpa_relabel.py`; share of
 
 On `vpa_shift` the 4-layer network names the whole relabelling (there, depth modulo 3) at 1.00. On `vpa_s3` the networks compose the relabelling exactly over a horizon of two to three levels and hold nothing global, not even the sign. The sign is the abelian part of this pair of relabellings, and here it earns nothing: knowing only that the relabelling between an ancestor and a bracket is even, or only that it is odd, leaves the bracket's type uniform given the ancestor's.
 
+**The commuting control is no easier.** Predictions 1 and 2 above are both wrong: `vpa_c3` does not behave like `vpa_shift`, and the non-commuting process is not the harder of the two. Excess loss, mnat/token, 512 fresh sequences (`runs/NAME.validate.txt`):
+
+| | all | depth ≥ 5 | reads of content 2+ levels up removed (all) | 3+ levels up removed |
+|---|---|---|---|---|
+| observer: 0 reads down | 29.2 | 39.0 | | |
+| observer: 1 read down | 15.6 | 24.7 | | |
+| observer: 2 reads down | 8.3 | 16.1 | | |
+| `vpa_c3`, 2 layers | 23.4 | 38.5 | 28.9 | 25.8 |
+| `vpa_s3`, 2 layers | 22.6 | 36.5 | 26.7 | 24.0 |
+| `vpa_c3`, 4 layers | 14.7 | 26.8 | 15.3 | 14.5 |
+| `vpa_s3`, 4 layers | 9.4 | 17.9 | 15.5 | 10.3 |
+| `vpa_shift`, 4 layers (one kind) | 2.1 | 2.8 | 10.4 | 6.0 |
+
+- With two kinds of open the networks land on the read-limited observers. The 4-layer control is at one read and uses nothing from two or more levels up (removing those reads changes nothing: 14.5 to 15.3). The 4-layer `vpa_s3` network is at two reads: removing reads two or more levels up puts it at the one-read observer (15.5 against 15.6), and removing reads three or more levels up changes nothing. Both 2-layer networks are between no read and one.
+- The attention is the chained algorithm's. In the 4-layer control, one head of block 4 puts 0.93 of its attention on the parent's own tokens, 0.44 of it on the single position just before the own open; another puts 0.99 on the own open, which carries the kind. On `vpa_shift` no head looked like this.
+- Neither network holds the relabelling from the root. The control names it at chance (0.32 against 0.34), and composes over fewer levels than the `vpa_s3` network (0.77 over two levels and 0.52 over three, against 0.92 and 0.66).
+- Losses were still falling slowly when the learning-rate schedule ended (the 4-layer `vpa_s3` run: 12.8, 11.3, 10.2, 9.7, 9.5 over the last 8,000 steps), where `vpa_shift` was at 9.9 after 4,000 steps. Longer training might add a level; it would not change the kind of solution.
+
+So what made `vpa_shift` easy was not that its relabelling commutes but that it depends on depth alone, which the network has anyway. Once the relabelling depends on which kinds lie on the path, commuting or not, these networks do not find a way to gather at once. They fall back on the recursion as we first wrote it, one read of the parent per content block, and then the number of layers does limit how much nesting they can use. That is the cost predicted for the "down" row of the first table of this project, appearing once the shortcut is gone. One seed per cell.
+
 ## The algebra inside each component
 
 Belief updating multiplies the state by one matrix per token, so what a component asks of a network is set by the monoid its token matrices generate, up to positive scale. `monoids.py` (output `runs/monoids.txt`) works these out.
